@@ -167,6 +167,7 @@ function mutationPriority(action: PendingSyncMutation['action']): number {
 
 let activeChannel: RealtimeChannel | null = null;
 let flushing = false;
+let pendingFlushRequested = false;
 
 /**
  * Descarrega a fila local `pendingSync` para o Supabase em ordem segura e resiliente a falhas por lista.
@@ -174,11 +175,16 @@ let flushing = false;
  * @returns `true` se todas as mutações pendentes foram sincronizadas com sucesso.
  */
 export async function flushPendingSync(): Promise<boolean> {
-  if (!isSupabaseConfigured || !supabase || !navigator.onLine || flushing) {
+  if (!isSupabaseConfigured || !supabase || !navigator.onLine) {
+    return false;
+  }
+  if (flushing) {
+    pendingFlushRequested = true;
     return false;
   }
 
   flushing = true;
+  pendingFlushRequested = false;
   let allSucceeded = true;
   try {
     const user = await ensureSupabaseSession();
@@ -279,10 +285,15 @@ export async function flushPendingSync(): Promise<boolean> {
     }
 
     return allSucceeded;
-  } catch {
+  } catch (err) {
+    console.warn('[PegaLá sync] flushPendingSync failed:', err);
     return false;
   } finally {
     flushing = false;
+    if (pendingFlushRequested && navigator.onLine) {
+      pendingFlushRequested = false;
+      void flushPendingSync();
+    }
   }
 }
 
@@ -474,6 +485,37 @@ export function subscribeToListRealtime(listId: string): () => void {
   }
 
   let cancelled = false;
+  let realtimeConnected = false;
+
+  const reconcileNow = async () => {
+    if (cancelled || !supabase || !navigator.onLine) return;
+    const user = await ensureSupabaseSession();
+    if (!user || cancelled || !supabase) return;
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      await supabase.realtime.setAuth(session.access_token);
+    }
+    await flushPendingSync();
+    await pullListFromCloud(listId);
+  };
+
+  const handleVisibilityOrOnline = () => {
+    if (document.visibilityState === 'visible' && navigator.onLine) {
+      void reconcileNow();
+    }
+  };
+
+  document.addEventListener('visibilitychange', handleVisibilityOrOnline);
+  window.addEventListener('online', handleVisibilityOrOnline);
+
+  // Fallback polling only when Realtime WebSocket is not actively subscribed (e.g. Firefox/mobile drops)
+  const fallbackTimer = window.setInterval(() => {
+    if (!cancelled && !realtimeConnected && document.visibilityState === 'visible' && navigator.onLine) {
+      void reconcileNow();
+    }
+  }, 5000);
 
   void (async () => {
     const user = await ensureSupabaseSession();
@@ -535,11 +577,21 @@ export function subscribeToListRealtime(listId: string): () => void {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        realtimeConnected = status === 'SUBSCRIBED';
+        if (status === 'SUBSCRIBED') {
+          void pullListFromCloud(listId);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn(`[PegaLá sync] Realtime status (${listId}):`, status);
+        }
+      });
   })();
 
   return () => {
     cancelled = true;
+    window.clearInterval(fallbackTimer);
+    document.removeEventListener('visibilitychange', handleVisibilityOrOnline);
+    window.removeEventListener('online', handleVisibilityOrOnline);
     if (activeChannel && supabase) {
       supabase.removeChannel(activeChannel);
       activeChannel = null;
