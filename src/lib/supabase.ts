@@ -32,12 +32,14 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
     })
   : null;
 
+let inFlightSessionPromise: Promise<User | null> | null = null;
+
 /**
- * Garante a existência de uma sessão autenticada no Supabase (reutilizando sessão ativa ou criando sessão anônima).
+ * Executa a verificação ou criação de sessão autenticada no Supabase.
  *
- * @returns Usuário autenticado atual ou `null` caso o Supabase não esteja configurado ou o login anônimo esteja desabilitado.
+ * @returns Usuário autenticado atual ou `null`.
  */
-export async function ensureSupabaseSession(): Promise<User | null> {
+async function runEnsureSupabaseSession(): Promise<User | null> {
   if (!supabase) return null;
 
   try {
@@ -64,6 +66,22 @@ export async function ensureSupabaseSession(): Promise<User | null> {
     authLogger.error('Exceção ao garantir sessão Supabase', serializeError(err));
     return null;
   }
+}
+
+/**
+ * Garante a existência de uma sessão autenticada no Supabase (reutilizando sessão ativa ou criando sessão anônima),
+ * serializando chamadas concorrentes para evitar criação de múltiplas sessões anônimas simultâneas.
+ *
+ * @returns Usuário autenticado atual ou `null` caso o Supabase não esteja configurado ou o login anônimo esteja desabilitado.
+ */
+export function ensureSupabaseSession(): Promise<User | null> {
+  if (!supabase) return Promise.resolve(null);
+  if (!inFlightSessionPromise) {
+    inFlightSessionPromise = runEnsureSupabaseSession().finally(() => {
+      inFlightSessionPromise = null;
+    });
+  }
+  return inFlightSessionPromise;
 }
 
 /**

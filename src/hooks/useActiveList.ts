@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, ensureDefaultLists, setLastActiveListId } from '../db/localDb';
 import { flushPendingSync, joinSharedListByCode, subscribeToListRealtime } from '../db/syncEngine';
@@ -91,12 +91,6 @@ export function useActiveList() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!activeListId) return;
-    const unsubscribe = subscribeToListRealtime(activeListId);
-    return unsubscribe;
-  }, [activeListId]);
-
   const listsQuery = useLiveQuery(() => db.lists.orderBy('createdAt').toArray(), []);
   const lists = useMemo(() => listsQuery ?? [], [listsQuery]);
 
@@ -104,6 +98,15 @@ export function useActiveList() {
     if (isJoiningSharedList) return null;
     return lists.find((l) => l.id === activeListId) ?? lists[0] ?? null;
   }, [lists, activeListId, isJoiningSharedList]);
+
+  useEffect(() => {
+    if (!activeList?.id) return;
+    if (activeListId && activeList.id !== activeListId) {
+      setLastActiveListId(activeList.id);
+    }
+    const unsubscribe = subscribeToListRealtime(activeList.id);
+    return unsubscribe;
+  }, [activeList?.id, activeListId]);
 
   const itemsQuery = useLiveQuery(
     () => (activeList ? db.items.where('listId').equals(activeList.id).toArray() : []),
@@ -158,10 +161,12 @@ export function useActiveList() {
     return { groupedPending: groups, checkedItems: checked };
   }, [items]);
 
-  const selectList = (listId: string) => {
+  const selectList = useCallback((listId: string) => {
     setLastActiveListId(listId);
     setActiveListIdState(listId);
-  };
+  }, []);
+
+  const clearJoinToast = useCallback(() => setJoinToast(null), []);
 
   return {
     lists,
@@ -176,6 +181,6 @@ export function useActiveList() {
     pendingSyncCount,
     selectList,
     joinToast,
-    clearJoinToast: () => setJoinToast(null),
+    clearJoinToast,
   };
 }

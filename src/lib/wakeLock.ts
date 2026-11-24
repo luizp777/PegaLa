@@ -43,6 +43,7 @@ export function useWakeLock() {
       }
     } catch (err) {
       uiLogger.debug('Falha ao solicitar Wake Lock de tela', serializeError(err));
+      desiredActiveRef.current = false;
       setIsActive(false);
     }
   }, [isSupported]);

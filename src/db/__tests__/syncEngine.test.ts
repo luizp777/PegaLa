@@ -6,6 +6,7 @@ const mockUpsertLists = vi.fn();
 const mockUpsertItems = vi.fn();
 const mockDeleteListMembers = vi.fn();
 const mockRefreshSession = vi.fn();
+const mockRpc = vi.fn();
 
 vi.mock('../../lib/supabase', () => ({
   isSupabaseConfigured: true,
@@ -14,6 +15,9 @@ vi.mock('../../lib/supabase', () => ({
     auth: {
       refreshSession: () => mockRefreshSession(),
     },
+    rpc: (...args: unknown[]) => ({
+      returns: () => mockRpc(...args),
+    }),
     from: (table: string) => {
       if (table === 'lists') {
         return {
@@ -41,7 +45,7 @@ vi.mock('../../lib/supabase', () => ({
   },
 }));
 
-import { flushPendingSync } from '../syncEngine';
+import { flushPendingSync, joinSharedListByCode } from '../syncEngine';
 
 describe('syncEngine', () => {
   beforeEach(async () => {
@@ -121,5 +125,37 @@ describe('syncEngine', () => {
     expect(mockRefreshSession).toHaveBeenCalledTimes(1);
     const remaining = await db.pendingSync.toArray();
     expect(remaining).toHaveLength(1);
+  });
+
+  it('returns error instead of false success after 3 consecutive 23505 share_code collisions', async () => {
+    const list = await createList('Colisão Persistente', 'mercado');
+    mockUpsertLists.mockResolvedValue({ error: { code: '23505', message: 'duplicate share_code' } });
+
+    const ok = await flushPendingSync();
+    expect(ok).toBe(false);
+    const updated = await db.lists.get(list.id);
+    expect(updated?.isSynced).toBe(false);
+    expect(await db.pendingSync.count()).toBeGreaterThan(0);
+  });
+
+  it('does not send duplicate item upserts when seeding a newly created local list', async () => {
+    const list = await createList('Sem Duplicar', 'mercado');
+    await addItemsFromText(list.id, 'Café');
+
+    const ok = await flushPendingSync();
+    expect(ok).toBe(true);
+    expect(mockUpsertItems).toHaveBeenCalledTimes(1);
+    expect(await db.pendingSync.count()).toBe(0);
+  });
+
+  it('preserves P0001 rate-limit message in joinSharedListByCode', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'P0001', message: 'Muitas tentativas. Aguarde 1 minuto e tente novamente.' },
+    });
+
+    const res = await joinSharedListByCode('PEGA-12345678');
+    expect(res.list).toBeNull();
+    expect(res.error).toBe('Muitas tentativas. Aguarde 1 minuto e tente novamente.');
   });
 });

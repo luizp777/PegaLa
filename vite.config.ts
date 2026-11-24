@@ -12,7 +12,6 @@ export default defineConfig({
           'vendor-supabase': ['@supabase/supabase-js'],
           'vendor-db': ['dexie', 'dexie-react-hooks'],
           'vendor-ui': ['lucide-react'],
-          'vendor-logging': ['tslog'],
         },
       },
     },
@@ -101,16 +100,6 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-            },
-          },
-        ],
       },
     }),
   ],

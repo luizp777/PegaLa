@@ -16,7 +16,7 @@ create table if not exists public.lists (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists idx_lists_share_code on public.lists (share_code);
+drop index if exists public.idx_lists_share_code;
 
 -- 2. Tabela de Itens da Lista
 create table if not exists public.list_items (
@@ -24,7 +24,7 @@ create table if not exists public.list_items (
   list_id uuid not null references public.lists(id) on delete cascade,
   name text not null,
   normalized_name text not null,
-  quantity numeric not null default 1,
+  quantity numeric not null default 1 check (quantity > 0),
   unit text not null default 'un',
   category_id text not null default 'outros',
   is_checked boolean not null default false,
@@ -32,6 +32,17 @@ create table if not exists public.list_items (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'list_items_quantity_positive' and conrelid = 'public.list_items'::regclass
+  ) then
+    alter table public.list_items add constraint list_items_quantity_positive check (quantity > 0);
+  end if;
+end;
+$$;
 
 create index if not exists idx_list_items_list_id on public.list_items (list_id);
 
@@ -73,6 +84,7 @@ create index if not exists idx_join_attempts_user_time
 create or replace function public.set_server_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at := now();
@@ -96,6 +108,7 @@ create trigger trg_list_items_server_updated_at
 create or replace function public.guard_lists_immutable_fields()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   if new.owner_id is distinct from old.owner_id then
@@ -258,7 +271,7 @@ create policy "lists_select_member"
 create policy "lists_insert_authenticated"
   on public.lists
   for insert
-  with check (auth.uid() is not null and (owner_id is null or owner_id = auth.uid()));
+  with check (auth.uid() is not null and owner_id = auth.uid());
 
 create policy "lists_update_member"
   on public.lists
@@ -274,10 +287,24 @@ create policy "lists_delete_owner"
 create policy "list_items_member_access"
   on public.list_items
   for all
-  using (public.is_list_member(list_id))
-  with check (public.is_list_member(list_id));
+  using (
+    public.is_list_member(list_id)
+    or exists (
+      select 1 from public.lists l
+       where l.id = list_id
+         and l.owner_id = auth.uid()
+    )
+  )
+  with check (
+    public.is_list_member(list_id)
+    or exists (
+      select 1 from public.lists l
+       where l.id = list_id
+         and l.owner_id = auth.uid()
+    )
+  );
 
--- list_members: usuário só pode ler e sair (DELETE) do próprio vínculo; INSERT/UPDATE são exclusivos via RPC/Trigger
+-- list_members: usuário só pode ler e sair (DELETE) do próprio vínculo de convidado; dono exclui a lista inteira
 create policy "list_members_select_self"
   on public.list_members
   for select
@@ -286,14 +313,17 @@ create policy "list_members_select_self"
 create policy "list_members_delete_self"
   on public.list_members
   for delete
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id and role <> 'owner');
 
--- 9. Permissões explícitas para roles anon e authenticated (obrigatório no Supabase atual)
-grant usage on schema public to anon, authenticated;
-grant select, insert, update, delete on public.lists to anon, authenticated;
-grant select, insert, update, delete on public.list_items to anon, authenticated;
-revoke insert, update on public.list_members from anon, authenticated;
-grant select, delete on public.list_members to anon, authenticated;
-revoke all on public.join_attempts from anon, authenticated;
-grant execute on function public.is_list_member(uuid) to anon, authenticated;
-grant execute on function public.join_list_by_share_code(text) to anon, authenticated;
+-- 9. Permissões explícitas para role authenticated (sessões anônimas e Google OAuth operam como authenticated)
+grant usage on schema public to authenticated;
+revoke all on public.lists, public.list_items, public.list_members, public.join_attempts from anon;
+grant select, insert, update, delete on public.lists to authenticated;
+grant select, insert, update, delete on public.list_items to authenticated;
+revoke insert, update on public.list_members from authenticated;
+grant select, delete on public.list_members to authenticated;
+revoke all on public.join_attempts from authenticated;
+revoke execute on function public.is_list_member(uuid) from anon;
+revoke execute on function public.join_list_by_share_code(text) from anon;
+grant execute on function public.is_list_member(uuid) to authenticated;
+grant execute on function public.join_list_by_share_code(text) to authenticated;

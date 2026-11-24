@@ -2,6 +2,33 @@
 
 ---
 
+## Ciclo 3 — Code Review Geral (Sincronização, Segurança, Transações & Bundle)
+
+> **Status**: Concluído (14/14 concluídos)
+> **Data de conclusão**: 2026-11-24
+
+### Alta Prioridade — Sincronização, Autenticação & Segurança Supabase
+- [x] **R01. Erro real após 3 colisões `23505`** (`syncEngine.ts`): `upsertListWithCodeRetry` retorna o último `PostgrestError` em vez de `null`.
+- [x] **R02. Serialização de `ensureSupabaseSession`** (`supabase.ts`): lock de promise em voo evita criação concorrente de sessões anônimas.
+- [x] **R03. Preservar erro de rate limit `P0001`** (`syncEngine.ts`): `joinSharedListByCode` retorna a mensagem da RPC sem cair no fallback genérico.
+- [x] **R04. Eliminar upsert duplicado no seed e backoff de `42501`** (`syncEngine.ts`): limpa mutações satisfeitas no seed e limita retentativas de `42501`.
+- [x] **R05. Reconciliação de `lists` e proteção no Realtime** (`syncEngine.ts`, `useActiveList.ts`): reconcilia exclusões/edições de lista, protege `DELETE`/`UPDATE` contra edições pendentes e observa `activeList?.id`.
+- [x] **R06. Endurecimento do schema PostgreSQL/RLS** (`supabase/schema.sql`): `search_path = public` em todas as funções, `owner_id = auth.uid()` no insert, proteção de `role = 'owner'`, `check (quantity > 0)`, remoção de índice redundante e grants restritos a `authenticated`.
+
+### Média Prioridade — Integridade Local, Hooks & UX Mobile
+- [x] **R07. Transações atômicas no Dexie e deduplicação ao renomear** (`localDb.ts`): `db.transaction('rw', ...)` nas operações de escrita e mesclagem limpa em `updateItemDetails`.
+- [x] **R08. Estado de erro no `useWakeLock` e callbacks estáveis** (`wakeLock.ts`, `useActiveList.ts`).
+- [x] **R09. Ciclo de vida, feedback OAuth e input anti-zoom iOS** (`PwaUpdatePrompt.tsx`, `ShareModal.tsx`, `Header.tsx`, `CheckedSection.tsx`).
+- [x] **R10. Eliminar FOUC de tema escuro** (`index.html`, `useTheme.ts`).
+- [x] **R11. Hoist de regex/unidades e proteção de `"meia"` na voz** (`itemParser.ts`, `speechParser.ts`).
+
+### Baixa Prioridade — Bundle, Limpeza PWA/CSP & Testes
+- [x] **R12. Logger leve sem `tslog` e lazy load do `QuickCatalogDrawer`** (`logger.ts`, `package.json`, `vite.config.ts`, `QuickAddBar.tsx`).
+- [x] **R13. Limpeza de regras mortas de Google Fonts** (`vite.config.ts`, `vercel.json`).
+- [x] **R14. Ampliação da suíte de testes** (`syncEngine.test.ts`, `localDb.test.ts`, `itemParser.test.ts`, `supabase.test.ts`).
+
+---
+
 ## Ciclo 2 — Design Review Geral (UI, UX Mobile & Acessibilidade)
 
 > **Status**: Concluído (10/10 concluídos)

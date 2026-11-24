@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { appLogger, serializeError } from '../lib/logger';
@@ -10,28 +10,33 @@ import { appLogger, serializeError } from '../lib/logger';
  * @returns Banner de atualização ou `null` quando não há nova versão pendente.
  */
 export function PwaUpdatePrompt() {
+  const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(swUrl, registration) {
       appLogger.debug('Service Worker registrado', { swUrl });
-      if (!registration) return;
-
-      const checkUpdate = () => {
-        if (navigator.onLine && document.visibilityState === 'visible') {
-          void registration.update().catch((err) => {
-            appLogger.debug('Falha ao verificar atualização do SW', serializeError(err));
-          });
-        }
-      };
-
-      document.addEventListener('visibilitychange', checkUpdate);
+      registrationRef.current = registration ?? null;
     },
     onRegisterError(error) {
       appLogger.warn('Erro ao registrar Service Worker', serializeError(error));
     },
   });
+
+  useEffect(() => {
+    const checkUpdate = () => {
+      const registration = registrationRef.current;
+      if (registration && navigator.onLine && document.visibilityState === 'visible') {
+        void registration.update().catch((err) => {
+          appLogger.debug('Falha ao verificar atualização do SW', serializeError(err));
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', checkUpdate);
+    return () => document.removeEventListener('visibilitychange', checkUpdate);
+  }, []);
 
   useEffect(() => {
     if (needRefresh) {

@@ -35,7 +35,9 @@ const UNIT_ALIASES: Record<string, string> = {
   fardos: 'fd',
   dz: 'dz',
   duzia: 'dz',
+  dúzia: 'dz',
   duzias: 'dz',
+  dúzias: 'dz',
   lata: 'lata',
   latas: 'lata',
   ltas: 'lata',
@@ -64,7 +66,26 @@ const UNIT_ALIASES: Record<string, string> = {
   macos: 'maço',
 };
 
-const UNIT_PATTERN = Object.keys(UNIT_ALIASES).join('|');
+const UNIT_PATTERN = Object.keys(UNIT_ALIASES)
+  .sort((a, b) => b.length - a.length)
+  .join('|');
+
+// Guard against leading pharmacy dosages (e.g. "500mg dipirona") and known numeric-leading brands ("3 Corações", "7 Belo", "3M")
+const LEADING_DOSAGE_REGEX = /^\d+(?:[.,]\d+)?\s*(?:mg|mcg|ui|%)\b/i;
+const LEADING_BRAND_REGEX = /^(?:3\s+cora[çc][õo]es|7\s+belo|3m|51\s+ice|51\s+cacha[çc]a)\b/i;
+const LEADING_QTY_REGEX = new RegExp(
+  `^(\\d+(?:[.,]\\d+)?)\\s*(?:(${UNIT_PATTERN})\\b)?\\s*(?:de\\s+)?(.+)$`,
+  'i'
+);
+const TRAILING_QTY_UNIT_REGEX = new RegExp(
+  `^(.+?)\\s+(\\d+(?:[.,]\\d+)?)\\s*(${UNIT_PATTERN})$`,
+  'i'
+);
+const TRAILING_X_REGEX = /^(.+?)\s+[xX]\s*(\d+(?:[.,]\d+)?)$/;
+const TRAILING_PLAIN_NUMBER_REGEX = /^(.+?)\s+(\d+(?:[.,]\d+)?)$/;
+// Protect product specs like "Fralda tamanho 3", "Ômega 3", "FPS 50", "Vitamina B12", "Café tipo 1"
+const TRAILING_SPEC_PREFIX_REGEX =
+  /(?:tamanho|tam\.?|n[º°]?|tipo|fase|etapa|[ôo]mega|fps|fator|vol\.?|vitamina\s*[a-z]?|grau|passo)$/i;
 
 /**
  * Converte uma string numérica com ponto ou vírgula em número positivo válido.
@@ -122,17 +143,10 @@ export function parseSingleItem(rawLine: string): ParsedItemInput | null {
   let unit = 'un';
   let name = line;
 
-  // 0. Guard against leading pharmacy dosages (e.g. "500mg dipirona") and known numeric-leading brands ("3 Corações", "7 Belo", "3M")
-  const leadingDosageRegex = /^\d+(?:[.,]\d+)?\s*(?:mg|mcg|ui|%)\b/i;
-  const leadingBrandRegex = /^(?:3\s+cora[çc][õo]es|7\s+belo|3m|51\s+ice|51\s+cacha[çc]a)\b/i;
-
-  // 1. Leading quantity + optional unit: "2 leite", "500g queijo", "1,5 kg batata", "2x sabonete", "2 cx de leite"
-  const leadingRegex = new RegExp(
-    `^(\\d+(?:[.,]\\d+)?)\\s*(?:(${UNIT_PATTERN})\\b)?\\s*(?:de\\s+)?(.+)$`,
-    'i'
-  );
   const leadingMatch =
-    leadingDosageRegex.test(line) || leadingBrandRegex.test(line) ? null : line.match(leadingRegex);
+    LEADING_DOSAGE_REGEX.test(line) || LEADING_BRAND_REGEX.test(line)
+      ? null
+      : line.match(LEADING_QTY_REGEX);
 
   if (leadingMatch) {
     const [, rawQty, rawUnit, rest] = leadingMatch;
@@ -148,19 +162,9 @@ export function parseSingleItem(rawLine: string): ParsedItemInput | null {
     }
   } else {
     // 2. Trailing quantity + unit: "dipirona 500mg 2 cx", "queijo prato 300g", "leite 3x", "papel higienico 2 pct"
-    const trailingQtyUnitRegex = new RegExp(
-      `^(.+?)\\s+(\\d+(?:[.,]\\d+)?)\\s*(${UNIT_PATTERN})$`,
-      'i'
-    );
-    const trailingXRegex = /^(.+?)\s+[xX]\s*(\d+(?:[.,]\d+)?)$/;
-    const trailingPlainNumberRegex = /^(.+?)\s+(\d+(?:[.,]\d+)?)$/;
-    // Protect product specs like "Fralda tamanho 3", "Ômega 3", "FPS 50", "Vitamina B12", "Café tipo 1"
-    const trailingSpecPrefixRegex =
-      /(?:tamanho|tam\.?|n[º°]?|tipo|fase|etapa|[ôo]mega|fps|fator|vol\.?|vitamina\s*[a-z]?|grau|passo)$/i;
-
-    const m1 = line.match(trailingQtyUnitRegex);
-    const m2 = !m1 ? line.match(trailingXRegex) : null;
-    const m3 = !m1 && !m2 ? line.match(trailingPlainNumberRegex) : null;
+    const m1 = line.match(TRAILING_QTY_UNIT_REGEX);
+    const m2 = !m1 ? line.match(TRAILING_X_REGEX) : null;
+    const m3 = !m1 && !m2 ? line.match(TRAILING_PLAIN_NUMBER_REGEX) : null;
 
     if (m1 && m1[1].trim().length >= 2) {
       name = m1[1].trim();
@@ -170,7 +174,7 @@ export function parseSingleItem(rawLine: string): ParsedItemInput | null {
       name = m2[1].trim();
       quantity = parseNumber(m2[2]);
       unit = 'un';
-    } else if (m3 && m3[1].trim().length >= 2 && !trailingSpecPrefixRegex.test(m3[1].trim())) {
+    } else if (m3 && m3[1].trim().length >= 2 && !TRAILING_SPEC_PREFIX_REGEX.test(m3[1].trim())) {
       // Only treat trailing plain number as quantity if positive and <= 50
       const rawCandidate = Number(m3[2].replace(',', '.'));
       if (Number.isFinite(rawCandidate) && rawCandidate > 0 && rawCandidate <= 50) {

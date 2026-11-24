@@ -94,11 +94,23 @@ export function Header({
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!menuOpen || !supabase) return;
+    if (!supabase) return;
+    let cancelled = false;
     void supabase.auth.getSession().then(({ data }) => {
-      setCurrentUserId(data.session?.user?.id ?? null);
+      if (!cancelled) {
+        setCurrentUserId(data.session?.user?.id ?? null);
+      }
     });
-  }, [menuOpen]);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUserId(session?.user?.id ?? null);
+    });
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

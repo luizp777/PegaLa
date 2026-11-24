@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Link2, Lock, LogIn, LogOut, MessageCircle, QrCode, Users, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@supabase/supabase-js';
@@ -36,18 +36,31 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
   const [joinStatus, setJoinStatus] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const listId = list?.id ?? null;
 
   useEffect(() => {
     if (!open || !supabase) return;
+    let cancelled = false;
     if (listId) {
       void syncListNow(listId);
     }
     void supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user && !data.user.is_anonymous ? data.user : null);
+      if (!cancelled) {
+        setUser(data.user && !data.user.is_anonymous ? data.user : null);
+      }
     });
+    return () => {
+      cancelled = true;
+    };
   }, [open, listId]);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -73,7 +86,8 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
       await navigator.clipboard.writeText(text);
       markListAsShared();
       setCopiedTarget(target);
-      setTimeout(() => setCopiedTarget(null), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopiedTarget(null), 2000);
     } catch (err) {
       uiLogger.debug('Falha ao copiar para a área de transferência', serializeError(err));
       setJoinStatus('Não foi possível copiar automaticamente. Selecione o código manualmente.');
@@ -268,7 +282,12 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
           ) : (
             <button
               type="button"
-              onClick={() => void signInWithGoogle()}
+              onClick={async () => {
+                const { error } = await signInWithGoogle();
+                if (error) {
+                  setJoinStatus(`Não foi possível entrar com Google: ${error}`);
+                }
+              }}
               className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             >
               <LogIn className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />

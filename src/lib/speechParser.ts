@@ -11,13 +11,15 @@ const NUMBER_WORDS_PT: Record<string, string> = {
   quatro: '4',
   cinco: '5',
   seis: '6',
-  meia: '0,5',
   sete: '7',
   oito: '8',
   nove: '9',
   dez: '10',
   doze: '12',
 };
+
+const MEIA_UNIT_REGEX =
+  /^meia\s+(d[uú]zias?|caixas?|cxs?|bandejas?|bdjs?|quilos?|kilos?|kgs?|litros?|lts?|garrafas?|latas?|cartelas?|pacotes?|pcts?)\b/i;
 
 /**
  * Converte frases faladas em português (números por extenso, expressões como `"um quilo e meio"` e conectivos)
@@ -52,6 +54,10 @@ export function normalizeSpokenPortuguese(transcript: string): string {
     .filter(Boolean);
 
   const normalizedLines = segments.map((seg) => {
+    // Convert "meia <unit>" only when followed by a compatible unit ("meia dúzia", not "meia branca")
+    if (MEIA_UNIT_REGEX.test(seg)) {
+      return seg.replace(/^meia\b/i, '0,5');
+    }
     // Convert leading Portuguese number words ("dois leites" -> "2 leites")
     const words = seg.split(/\s+/);
     if (words.length >= 2) {

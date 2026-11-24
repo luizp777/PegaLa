@@ -181,6 +181,7 @@ async function upsertListWithCodeRetry(
 ): Promise<PostgrestError | null> {
   if (!supabase) return null;
   let candidate = list;
+  let lastError: PostgrestError | null = null;
 
   for (let attempt = 0; attempt < 3; attempt++) {
     const { error } = await supabase
@@ -188,6 +189,8 @@ async function upsertListWithCodeRetry(
       .upsert(toRemoteList(candidate, userId), { onConflict: 'id' });
 
     if (!error) return null;
+
+    lastError = error;
 
     if (error.code === '23505') {
       const nextCode = generateShareCode();
@@ -206,12 +209,14 @@ async function upsertListWithCodeRetry(
     return error;
   }
 
-  return null;
+  return lastError;
 }
 
 let activeChannel: RealtimeChannel | null = null;
 let flushing = false;
 let pendingFlushRequested = false;
+const authRetryCounts = new Map<string, number>();
+const MAX_AUTH_RETRIES = 3;
 
 /**
  * Descarrega a fila local `pendingSync` para o Supabase em ordem segura e resiliente a falhas por lista.
@@ -245,6 +250,7 @@ export async function flushPendingSync(): Promise<boolean> {
     // Seed any local-only lists (created before Supabase was configured) into the cloud first
     const unsyncedLists = await db.lists.filter((l) => !l.isSynced).toArray();
     for (const localList of unsyncedLists) {
+      const seedStartedAt = new Date().toISOString();
       const listErr = await upsertListWithCodeRetry(localList, user.id);
       if (!listErr) {
         const localItems = await db.items.where('listId').equals(localList.id).toArray();
@@ -256,10 +262,22 @@ export async function flushPendingSync(): Promise<boolean> {
           itemsErr = res.error;
         }
         if (!itemsErr) {
+          const syncedItemIds = new Set(localItems.map((i) => i.id));
           await db.lists.update(localList.id, {
             isSynced: true,
             ownerId: localList.ownerId ?? user.id,
           });
+          // Remove pending upsert mutations already satisfied by the seed pass
+          await db.pendingSync
+            .where('listId')
+            .equals(localList.id)
+            .filter(
+              (m) =>
+                m.createdAt <= seedStartedAt &&
+                (m.action === 'upsert_list' ||
+                  (m.action === 'upsert_item' && syncedItemIds.has(m.entityId)))
+            )
+            .delete();
         } else {
           syncLogger.warn('Falha ao enviar itens iniciais da lista local', {
             listId: localList.id,
@@ -323,11 +341,14 @@ export async function flushPendingSync(): Promise<boolean> {
         error = res.error;
       }
 
+      const retryKey = `${mut.action}:${mut.entityId}`;
       if (!error) {
+        authRetryCounts.delete(retryKey);
         if (mut.id !== undefined) {
           await db.pendingSync.delete(mut.id);
         }
       } else if (isPermanentError(error)) {
+        authRetryCounts.delete(retryKey);
         // Discard permanently invalid mutation to prevent head-of-line blocking
         syncLogger.warn('Mutação permanente descartada da fila offline', {
           action: mut.action,
@@ -339,11 +360,34 @@ export async function flushPendingSync(): Promise<boolean> {
           await db.pendingSync.delete(mut.id);
         }
         allSucceeded = false;
-      } else {
-        // Transient or auth-expired error (including 42501): keep queued and refresh session if needed
-        if (error.code === '42501') {
+      } else if (error.code === '42501') {
+        const attempts = (authRetryCounts.get(retryKey) ?? 0) + 1;
+        authRetryCounts.set(retryKey, attempts);
+
+        if (attempts >= MAX_AUTH_RETRIES) {
+          authRetryCounts.delete(retryKey);
+          syncLogger.warn('Permissão negada persistentemente (42501); descartando mutação da fila', {
+            action: mut.action,
+            entityId: mut.entityId,
+            listId: mut.listId,
+            attempts,
+            error: serializeError(error),
+          });
+          if (mut.id !== undefined) {
+            await db.pendingSync.delete(mut.id);
+          }
+        } else {
           void supabase.auth.refreshSession().catch(() => {});
+          syncLogger.warn('Erro transitório ao sincronizar mutação (mantida na fila)', {
+            action: mut.action,
+            entityId: mut.entityId,
+            listId: mut.listId,
+            error: serializeError(error),
+          });
+          failedListIds.add(mut.listId);
         }
+        allSucceeded = false;
+      } else {
         syncLogger.warn('Erro transitório ao sincronizar mutação (mantida na fila)', {
           action: mut.action,
           entityId: mut.entityId,
@@ -407,6 +451,12 @@ export async function joinSharedListByCode(rawCode: string): Promise<{
     if (!rpcError && Array.isArray(rpcRows) && rpcRows.length > 0) {
       listRow = rpcRows[0];
     } else if (rpcError) {
+      if (rpcError.code === 'P0001') {
+        return { list: null, error: rpcError.message };
+      }
+      if (rpcError.code === '42501') {
+        return { list: null, error: 'Não foi possível autenticar sua sessão. Tente novamente.' };
+      }
       syncLogger.warn('RPC join_list_by_share_code falhou; tentando consulta direta', {
         code,
         error: serializeError(rpcError),
@@ -467,6 +517,41 @@ export async function pullListFromCloud(listId: string): Promise<void> {
 
     const localList = await db.lists.get(listId);
     if (!localList?.isSynced) return;
+
+    const { data: remoteListRow, error: remoteListError } = await supabase
+      .from('lists')
+      .select('*')
+      .eq('id', listId)
+      .maybeSingle<RemoteListRow>();
+
+    if (!remoteListError) {
+      const pendingListUpsert = await db.pendingSync
+        .where('listId')
+        .equals(listId)
+        .filter((m) => m.action === 'upsert_list')
+        .count();
+
+      if (!remoteListRow) {
+        if (pendingListUpsert === 0) {
+          await db.transaction('rw', db.lists, db.items, db.pendingSync, async () => {
+            await db.items.where('listId').equals(listId).delete();
+            await db.lists.delete(listId);
+            await db.pendingSync.where('listId').equals(listId).delete();
+          });
+          return;
+        }
+      } else if (
+        pendingListUpsert === 0 &&
+        new Date(remoteListRow.updated_at) >= new Date(localList.updatedAt)
+      ) {
+        await db.lists.update(listId, {
+          name: remoteListRow.name,
+          type: remoteListRow.type,
+          shareCode: remoteListRow.share_code,
+          updatedAt: remoteListRow.updated_at,
+        });
+      }
+    }
 
     if (localList.ownerId && localList.ownerId !== user.id && !localList.isShared) {
       await db.lists.update(listId, { isShared: true });
@@ -685,7 +770,14 @@ export function subscribeToListRealtime(listId: string): () => void {
               if (payload.eventType === 'DELETE') {
                 const oldRow = payload.old as { id?: string };
                 if (oldRow?.id) {
-                  await db.items.delete(oldRow.id);
+                  const hasPending = await db.pendingSync
+                    .where('listId')
+                    .equals(listId)
+                    .filter((m) => m.entityId === oldRow.id)
+                    .count();
+                  if (hasPending === 0) {
+                    await db.items.delete(oldRow.id);
+                  }
                 }
               } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                 const row = payload.new as RemoteItemRow;
@@ -733,11 +825,22 @@ export function subscribeToListRealtime(listId: string): () => void {
               } else if (payload.eventType === 'UPDATE') {
                 const row = payload.new as RemoteListRow;
                 if (!row?.id) return;
-                await db.lists.update(row.id, {
-                  name: row.name,
-                  type: row.type,
-                  updatedAt: row.updated_at,
-                });
+                const hasPending = await db.pendingSync
+                  .where('listId')
+                  .equals(listId)
+                  .filter((m) => m.action === 'upsert_list')
+                  .count();
+                if (hasPending > 0) return;
+
+                const local = await db.lists.get(row.id);
+                if (!local || new Date(row.updated_at) >= new Date(local.updatedAt)) {
+                  await db.lists.update(row.id, {
+                    name: row.name,
+                    type: row.type,
+                    shareCode: row.share_code,
+                    updatedAt: row.updated_at,
+                  });
+                }
               }
             } catch (err) {
               syncLogger.error('Erro ao aplicar evento Realtime da lista no IndexedDB', {

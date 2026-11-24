@@ -242,8 +242,10 @@ export async function createList(name: string, type: ListType): Promise<Shopping
     updatedAt: now,
   };
 
-  await db.lists.put(list);
-  await enqueueSync('upsert_list', list.id, list.id, list as unknown as Record<string, unknown>);
+  await db.transaction('rw', db.lists, db.pendingSync, async () => {
+    await db.lists.put(list);
+    await enqueueSync('upsert_list', list.id, list.id, list as unknown as Record<string, unknown>);
+  });
   setLastActiveListId(list.id);
   return list;
 }
@@ -265,8 +267,10 @@ export async function renameList(listId: string, newName: string): Promise<void>
     name: trimmed,
     updatedAt: new Date().toISOString(),
   };
-  await db.lists.put(updated);
-  await enqueueSync('upsert_list', updated.id, updated.id, updated as unknown as Record<string, unknown>);
+  await db.transaction('rw', db.lists, db.pendingSync, async () => {
+    await db.lists.put(updated);
+    await enqueueSync('upsert_list', updated.id, updated.id, updated as unknown as Record<string, unknown>);
+  });
 }
 
 /**
@@ -363,53 +367,55 @@ export async function addItemsFromText(listId: string, rawText: string): Promise
   const now = new Date().toISOString();
   const addedOrUpdated: ShoppingItem[] = [];
 
-  for (const parsed of parsedItems) {
-    const existing = await db.items
-      .where('[listId+normalizedName]')
-      .equals([listId, parsed.normalizedName])
-      .first();
+  await db.transaction('rw', db.items, db.pendingSync, db.dictionary, async () => {
+    for (const parsed of parsedItems) {
+      const existing = await db.items
+        .where('[listId+normalizedName]')
+        .equals([listId, parsed.normalizedName])
+        .first();
 
-    if (existing) {
-      // If item was already in "checked", uncheck it and set new quantity; if unchecked, sum quantities if same unit
-      const updatedQty = existing.isChecked
-        ? parsed.quantity
-        : existing.unit === parsed.unit
-          ? existing.quantity + parsed.quantity
-          : parsed.quantity;
+      if (existing) {
+        // If item was already in "checked", uncheck it and set new quantity; if unchecked, sum quantities if same unit
+        const updatedQty = existing.isChecked
+          ? parsed.quantity
+          : existing.unit === parsed.unit
+            ? existing.quantity + parsed.quantity
+            : parsed.quantity;
 
-      const updated: ShoppingItem = {
-        ...existing,
-        quantity: updatedQty,
-        unit: parsed.unit,
-        isChecked: false,
-        checkedAt: null,
-        updatedAt: now,
-      };
-      await db.items.put(updated);
-      await enqueueSync('upsert_item', updated.id, listId, updated as unknown as Record<string, unknown>);
-      await recordDictionaryUsage(updated.name, updated.categoryId);
-      addedOrUpdated.push(updated);
-    } else {
-      const categoryId = guessCategory(parsed.name, userDict);
-      const item: ShoppingItem = {
-        id: crypto.randomUUID(),
-        listId,
-        name: parsed.name,
-        normalizedName: parsed.normalizedName,
-        quantity: parsed.quantity,
-        unit: parsed.unit,
-        categoryId,
-        isChecked: false,
-        checkedAt: null,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await db.items.put(item);
-      await enqueueSync('upsert_item', item.id, listId, item as unknown as Record<string, unknown>);
-      await recordDictionaryUsage(item.name, categoryId);
-      addedOrUpdated.push(item);
+        const updated: ShoppingItem = {
+          ...existing,
+          quantity: updatedQty,
+          unit: parsed.unit,
+          isChecked: false,
+          checkedAt: null,
+          updatedAt: now,
+        };
+        await db.items.put(updated);
+        await enqueueSync('upsert_item', updated.id, listId, updated as unknown as Record<string, unknown>);
+        await recordDictionaryUsage(updated.name, updated.categoryId);
+        addedOrUpdated.push(updated);
+      } else {
+        const categoryId = guessCategory(parsed.name, userDict);
+        const item: ShoppingItem = {
+          id: crypto.randomUUID(),
+          listId,
+          name: parsed.name,
+          normalizedName: parsed.normalizedName,
+          quantity: parsed.quantity,
+          unit: parsed.unit,
+          categoryId,
+          isChecked: false,
+          checkedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await db.items.put(item);
+        await enqueueSync('upsert_item', item.id, listId, item as unknown as Record<string, unknown>);
+        await recordDictionaryUsage(item.name, categoryId);
+        addedOrUpdated.push(item);
+      }
     }
-  }
+  });
 
   return addedOrUpdated;
 }
@@ -428,8 +434,10 @@ export async function toggleItemChecked(item: ShoppingItem): Promise<void> {
     checkedAt: nextChecked ? now : null,
     updatedAt: now,
   };
-  await db.items.put(updated);
-  await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
+  await db.transaction('rw', db.items, db.pendingSync, async () => {
+    await db.items.put(updated);
+    await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
+  });
 }
 
 /**
@@ -496,8 +504,10 @@ export async function updateItemQuantity(item: ShoppingItem, delta: number): Pro
     quantity: nextQty,
     updatedAt: new Date().toISOString(),
   };
-  await db.items.put(updated);
-  await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
+  await db.transaction('rw', db.items, db.pendingSync, async () => {
+    await db.items.put(updated);
+    await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
+  });
 }
 
 /**
@@ -557,8 +567,10 @@ export async function setItemExactQuantityAndUnit(
     unit,
     updatedAt: new Date().toISOString(),
   };
-  await db.items.put(updated);
-  await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
+  await db.transaction('rw', db.items, db.pendingSync, async () => {
+    await db.items.put(updated);
+    await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
+  });
 }
 
 /**
@@ -594,14 +606,17 @@ export async function updateItemCategory(item: ShoppingItem, categoryId: Categor
     categoryId,
     updatedAt: new Date().toISOString(),
   };
-  await db.items.put(updated);
-  await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
-  await recordDictionaryUsage(item.name, categoryId, true);
+  await db.transaction('rw', db.items, db.pendingSync, db.dictionary, async () => {
+    await db.items.put(updated);
+    await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
+    await recordDictionaryUsage(item.name, categoryId, true);
+  });
 }
 
 /**
  * Atualiza os detalhes completos de um item (nome, quantidade, unidade e corredor),
- * sincroniza com o Supabase e ensina a categoria ao dicionário pessoal caso alterada.
+ * sincroniza com o Supabase, mescla duplicatas caso o novo nome já exista na lista
+ * e ensina a categoria ao dicionário pessoal caso alterada.
  *
  * @param item - Item original a ser atualizado.
  * @param updates - Novos valores de nome, quantidade, unidade e categoria.
@@ -615,21 +630,46 @@ export async function updateItemDetails(
   const safeQty = Number.isFinite(updates.quantity) && updates.quantity > 0 ? updates.quantity : item.quantity;
   const safeUnit = updates.unit.trim() || item.unit;
 
-  const updated: ShoppingItem = {
-    ...item,
-    name: cleanedName,
-    normalizedName,
-    quantity: safeQty,
-    unit: safeUnit,
-    categoryId: updates.categoryId,
-    updatedAt: new Date().toISOString(),
-  };
+  await db.transaction('rw', db.items, db.pendingSync, db.dictionary, async () => {
+    const duplicate = await db.items
+      .where('[listId+normalizedName]')
+      .equals([item.listId, normalizedName])
+      .first();
 
-  await db.items.put(updated);
-  await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
-  if (updates.categoryId !== item.categoryId || cleanedName !== item.name) {
-    await recordDictionaryUsage(cleanedName, updates.categoryId, true);
-  }
+    const mergedQty =
+      duplicate && duplicate.id !== item.id && !duplicate.isChecked && duplicate.unit === safeUnit
+        ? Number((safeQty + duplicate.quantity).toFixed(2))
+        : safeQty;
+
+    if (duplicate && duplicate.id !== item.id) {
+      await db.items.delete(duplicate.id);
+      await db.pendingSync
+        .where('listId')
+        .equals(item.listId)
+        .filter((m) => m.entityId === duplicate.id && m.action === 'upsert_item')
+        .delete();
+      await enqueueSync('delete_item', duplicate.id, item.listId, {
+        id: duplicate.id,
+        listId: item.listId,
+      });
+    }
+
+    const updated: ShoppingItem = {
+      ...item,
+      name: cleanedName,
+      normalizedName,
+      quantity: mergedQty,
+      unit: safeUnit,
+      categoryId: updates.categoryId,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await db.items.put(updated);
+    await enqueueSync('upsert_item', updated.id, updated.listId, updated as unknown as Record<string, unknown>);
+    if (updates.categoryId !== item.categoryId || cleanedName !== item.name) {
+      await recordDictionaryUsage(cleanedName, updates.categoryId, true);
+    }
+  });
 }
 
 /**

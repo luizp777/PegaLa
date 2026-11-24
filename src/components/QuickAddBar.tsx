@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
+import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import {
   Check,
   ClipboardPaste,
@@ -15,8 +15,11 @@ import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { serializeError, uiLogger } from '../lib/logger';
 import { useVoiceInput } from '../lib/speechParser';
 import type { CategoryId, ShoppingItem, ShoppingList, UserDictionaryEntry } from '../types';
-import { QuickCatalogDrawer } from './QuickCatalogDrawer';
 import { ItemIcon, ListTypeIcon } from './ItemIcon';
+
+const QuickCatalogDrawer = lazy(() =>
+  import('./QuickCatalogDrawer').then((m) => ({ default: m.QuickCatalogDrawer }))
+);
 
 /**
  * Métodos imperativos expostos por {@link QuickAddBar} para atalhos externos (ex.: estado vazio da lista).
@@ -117,23 +120,29 @@ export function QuickAddBar({
     (errorMsg) => onShowToast(errorMsg)
   );
 
-  useImperativeHandle(barRef, () => ({
-    openCatalog: () => {
-      hapticLight();
-      setCatalogOpen(true);
-      setIsFocused(false);
-    },
-    triggerVoice: () => {
-      hapticLight();
-      if (!voice.isSupported) {
-        onShowToast('Reconhecimento de voz não suportado neste navegador.');
-        inputRef.current?.focus();
-        return;
-      }
-      setCatalogOpen(false);
-      voice.toggleListening();
-    },
-  }));
+  const { isSupported: isVoiceSupported, toggleListening: toggleVoice } = voice;
+
+  useImperativeHandle(
+    barRef,
+    () => ({
+      openCatalog: () => {
+        hapticLight();
+        setCatalogOpen(true);
+        setIsFocused(false);
+      },
+      triggerVoice: () => {
+        hapticLight();
+        if (!isVoiceSupported) {
+          onShowToast('Reconhecimento de voz não suportado neste navegador.');
+          inputRef.current?.focus();
+          return;
+        }
+        setCatalogOpen(false);
+        toggleVoice();
+      },
+    }),
+    [isVoiceSupported, toggleVoice, onShowToast]
+  );
 
   useEffect(() => {
     return () => {
@@ -277,19 +286,21 @@ export function QuickAddBar({
       )}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-200/90 bg-white/95 backdrop-blur-md pb-safe dark:border-zinc-800/90 dark:bg-zinc-950/95">
         <div className="mx-auto max-w-2xl px-3 pt-2 sm:px-4">
-          {/* Expandable Thumb-Zone Quick Catalog Drawer */}
-          {activeList && (
-            <QuickCatalogDrawer
-              open={catalogOpen}
-              listType={activeList.type}
-              frequentItems={userHistory}
-              uncheckedByNormalizedName={uncheckedByNormalizedName}
-              checkedByNormalizedName={checkedByNormalizedName}
-              onAddNew={(term) => void onAddText(term)}
-              onIncrement={onIncrementItem}
-              onDecrement={onDecrementItem}
-              onClose={() => setCatalogOpen(false)}
-            />
+          {/* Expandable Thumb-Zone Quick Catalog Drawer (lazy-loaded on demand) */}
+          {activeList && catalogOpen && (
+            <Suspense fallback={null}>
+              <QuickCatalogDrawer
+                open={catalogOpen}
+                listType={activeList.type}
+                frequentItems={userHistory}
+                uncheckedByNormalizedName={uncheckedByNormalizedName}
+                checkedByNormalizedName={checkedByNormalizedName}
+                onAddNew={(term) => void onAddText(term)}
+                onIncrement={onIncrementItem}
+                onDecrement={onDecrementItem}
+                onClose={() => setCatalogOpen(false)}
+              />
+            </Suspense>
           )}
 
         {/* Voice Listening Indicator */}

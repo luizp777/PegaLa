@@ -118,4 +118,25 @@ describe('localDb (IndexedDB / Dexie)', () => {
       categoryId: 'bebidas',
     });
   });
+
+  it('merges duplicate items cleanly when renaming an item in updateItemDetails', async () => {
+    const list = await createList('Mercado', 'mercado');
+    const [arroz, leite] = await addItemsFromText(list.id, '2 Arroz\n1 Leite');
+
+    await updateItemDetails(leite, {
+      name: 'Arroz',
+      quantity: 3,
+      unit: 'un',
+      categoryId: 'mercearia',
+    });
+
+    const allItems = await db.items.where('listId').equals(list.id).toArray();
+    expect(allItems).toHaveLength(1);
+    expect(allItems[0].id).toBe(leite.id);
+    expect(allItems[0].quantity).toBe(5);
+
+    const muts = await db.pendingSync.where('listId').equals(list.id).toArray();
+    expect(muts.some((m) => m.action === 'delete_item' && m.entityId === arroz.id)).toBe(true);
+    expect(muts.some((m) => m.action === 'upsert_item' && m.entityId === leite.id)).toBe(true);
+  });
 });

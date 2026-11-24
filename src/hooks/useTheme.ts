@@ -7,6 +7,13 @@ type ThemeMode = 'system' | 'light' | 'dark';
 
 const STORAGE_KEY = 'pegala_theme';
 
+function computeIsDark(theme: ThemeMode): boolean {
+  if (theme === 'dark') return true;
+  if (theme === 'light') return false;
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 /**
  * Hook React que gerencia a preferência de tema Claro/Escuro (incluindo detecção automática do sistema).
  *
@@ -22,14 +29,14 @@ export function useTheme() {
     }
   });
 
-  const [resolvedDark, setResolvedDark] = useState(false);
+  const [resolvedDark, setResolvedDark] = useState(() => computeIsDark(theme));
 
   useEffect(() => {
     const root = document.documentElement;
     const media = window.matchMedia('(prefers-color-scheme: dark)');
 
     const applyTheme = () => {
-      const isDark = theme === 'dark' || (theme === 'system' && media.matches);
+      const isDark = computeIsDark(theme);
       root.classList.toggle('dark', isDark);
       setResolvedDark(isDark);
     };

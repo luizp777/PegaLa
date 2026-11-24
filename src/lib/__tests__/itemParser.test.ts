@@ -165,6 +165,14 @@ describe('speechParser', () => {
     expect(items[0]).toMatchObject({ name: 'Batata', quantity: 1.5, unit: 'kg' });
     expect(items[1]).toMatchObject({ name: 'Suco', quantity: 1.5, unit: 'L' });
   });
+
+  it('converts "meia" only before compatible units and preserves "meia branca"', () => {
+    const eggs = parseMultiLineInput(normalizeSpokenPortuguese('meia dúzia de ovos'));
+    expect(eggs[0]).toMatchObject({ name: 'Ovos', quantity: 0.5, unit: 'dz' });
+
+    const socks = parseMultiLineInput(normalizeSpokenPortuguese('meia branca'));
+    expect(socks[0]).toMatchObject({ name: 'Meia branca', quantity: 1, unit: 'un' });
+  });
 });
 
 describe('getQuantityStep', () => {
