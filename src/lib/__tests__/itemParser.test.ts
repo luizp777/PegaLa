@@ -68,6 +68,39 @@ describe('itemParser', () => {
     expect(items[3]).toMatchObject({ name: 'Dipirona 500mg', quantity: 1, unit: 'cx' });
   });
 
+  it('protects product specifiers, numeric-leading brands, and zero quantity safely', () => {
+    expect(parseSingleItem('Fralda tamanho 3')).toMatchObject({
+      name: 'Fralda tamanho 3',
+      quantity: 1,
+      unit: 'un',
+    });
+    expect(parseSingleItem('Ômega 3')).toMatchObject({
+      name: 'Ômega 3',
+      quantity: 1,
+      unit: 'un',
+    });
+    expect(parseSingleItem('Protetor solar FPS 50')).toMatchObject({
+      name: 'Protetor solar FPS 50',
+      quantity: 1,
+      unit: 'un',
+    });
+    expect(parseSingleItem('3 Corações café')).toMatchObject({
+      name: '3 Corações café',
+      quantity: 1,
+      unit: 'un',
+    });
+    expect(parseSingleItem('7 Belo bala')).toMatchObject({
+      name: '7 Belo bala',
+      quantity: 1,
+      unit: 'un',
+    });
+    expect(parseSingleItem('0 leite')).toMatchObject({
+      name: 'Leite',
+      quantity: 1,
+      unit: 'un',
+    });
+  });
+
   it('formats quantities nicely', () => {
     expect(formatQuantity(2, 'un')).toBe('2x');
     expect(formatQuantity(1.5, 'kg')).toBe('1,5kg');
@@ -105,9 +138,9 @@ describe('dictionaryPtBr', () => {
 });
 
 describe('generateShareCode', () => {
-  it('generates a 6-char PEGA-XXXXXX code', () => {
+  it('generates an 8-char PEGA-XXXXXXXX code', () => {
     const code = generateShareCode();
-    expect(code).toMatch(/^PEGA-[A-Z2-9]{6}$/);
+    expect(code).toMatch(/^PEGA-[A-Z2-9]{8}$/);
   });
 });
 
@@ -135,12 +168,18 @@ describe('speechParser', () => {
 });
 
 describe('getQuantityStep', () => {
-  it('returns unit-aware steps for g, ml, kg, L and un', () => {
-    expect(getQuantityStep('g', 500)).toBe(100);
-    expect(getQuantityStep('g', 100)).toBe(50);
-    expect(getQuantityStep('kg', 1.5)).toBe(0.5);
-    expect(getQuantityStep('kg', 2)).toBe(1);
-    expect(getQuantityStep('un', 3)).toBe(1);
+  it('returns symmetric unit-aware steps for g, ml, kg, L and un', () => {
+    expect(getQuantityStep('g', 50, 'inc')).toBe(50);
+    expect(getQuantityStep('g', 100, 'inc')).toBe(100);
+    expect(getQuantityStep('g', 500, 'inc')).toBe(100);
+    expect(getQuantityStep('g', 200, 'dec')).toBe(100);
+    expect(getQuantityStep('g', 100, 'dec')).toBe(50);
+    expect(getQuantityStep('kg', 0.5, 'inc')).toBe(0.5);
+    expect(getQuantityStep('kg', 1, 'inc')).toBe(1);
+    expect(getQuantityStep('kg', 1, 'dec')).toBe(0.5);
+    expect(getQuantityStep('kg', 2, 'dec')).toBe(1);
+    expect(getQuantityStep('kg', 1.5, 'inc')).toBe(0.5);
+    expect(getQuantityStep('un', 3, 'inc')).toBe(1);
     expect(getMinQuantityForUnit('g')).toBe(50);
     expect(getMinQuantityForUnit('kg')).toBe(0.5);
     expect(getMinQuantityForUnit('un')).toBe(1);

@@ -37,15 +37,17 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
   const [joining, setJoining] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
+  const listId = list?.id ?? null;
+
   useEffect(() => {
     if (!open || !supabase) return;
-    if (list) {
-      void syncListNow(list.id);
+    if (listId) {
+      void syncListNow(listId);
     }
     void supabase.auth.getUser().then(({ data }) => {
       setUser(data.user && !data.user.is_anonymous ? data.user : null);
     });
-  }, [open, list]);
+  }, [open, listId]);
 
   useEffect(() => {
     if (!open) return;
@@ -119,12 +121,12 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
                 Compartilhar "{list.name}"
               </h2>
               {list.isShared ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/12 px-2 py-0.5 text-[10px] font-bold text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/12 px-2 py-0.5 text-[11px] font-bold text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
                   <Users className="h-3 w-3" />
                   Compartilhada
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                   <Lock className="h-2.5 w-2.5" />
                   Privada
                 </span>

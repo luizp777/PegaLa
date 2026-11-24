@@ -405,7 +405,7 @@ export function QuickAddBar({
                   )}
                   {hasDuplicateName && (
                     <span
-                      className={`font-mono text-[10px] font-semibold ${
+                      className={`font-mono text-[11px] font-semibold ${
                         isCurrent
                           ? list.isShared
                             ? 'text-sky-100'

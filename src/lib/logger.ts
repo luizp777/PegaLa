@@ -51,11 +51,13 @@ export function serializeError(err: unknown): SerializedError {
 
 const isTestEnv = import.meta.env.MODE === 'test';
 const isDevEnv = import.meta.env.DEV;
+const remoteLogEndpoint = import.meta.env.VITE_LOG_ENDPOINT as string | undefined;
 
 /**
  * Logger raiz do PegaLá baseado em `tslog`.
  * Em desenvolvimento registra a partir de `debug` (2); em produção a partir de `info` (3);
  * em testes automatizados apenas `warn` (4) ou superior.
+ * Quando `VITE_LOG_ENDPOINT` está configurado em produção, envia eventos `warn`/`error`/`fatal` via `sendBeacon`.
  */
 export const rootLogger = new Logger<ILogObj>({
   name: 'PegaLa',
@@ -68,6 +70,33 @@ export const rootLogger = new Logger<ILogObj>({
     capture: isDevEnv ? 'auto' : 'off',
   },
 });
+
+if (remoteLogEndpoint && !isDevEnv && !isTestEnv && typeof navigator !== 'undefined') {
+  rootLogger.attachTransport((logObj) => {
+    const meta = logObj._meta as { logLevelId?: number; logLevelName?: string; name?: string } | undefined;
+    if (!meta?.logLevelId || meta.logLevelId < 4) return;
+    try {
+      const payload = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: meta.logLevelName,
+        logger: meta.name,
+        data: logObj,
+      });
+      if (typeof navigator.sendBeacon === 'function') {
+        navigator.sendBeacon(remoteLogEndpoint, payload);
+      } else {
+        void fetch(remoteLogEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch {
+      // Nunca permite que falha no transporte remoto quebre o app
+    }
+  });
+}
 
 /** Sub-logger para inicialização, ciclo de vida e erros globais do aplicativo. */
 export const appLogger = rootLogger.getSubLogger({ name: 'App' });

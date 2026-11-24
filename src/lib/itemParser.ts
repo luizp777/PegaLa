@@ -122,23 +122,26 @@ export function parseSingleItem(rawLine: string): ParsedItemInput | null {
   let unit = 'un';
   let name = line;
 
-  // 0. Guard against leading pharmacy dosages (e.g. "500mg dipirona", "1000ui vitamina d", "20mcg ...")
+  // 0. Guard against leading pharmacy dosages (e.g. "500mg dipirona") and known numeric-leading brands ("3 Corações", "7 Belo", "3M")
   const leadingDosageRegex = /^\d+(?:[.,]\d+)?\s*(?:mg|mcg|ui|%)\b/i;
+  const leadingBrandRegex = /^(?:3\s+cora[çc][õo]es|7\s+belo|3m|51\s+ice|51\s+cacha[çc]a)\b/i;
 
   // 1. Leading quantity + optional unit: "2 leite", "500g queijo", "1,5 kg batata", "2x sabonete", "2 cx de leite"
   const leadingRegex = new RegExp(
     `^(\\d+(?:[.,]\\d+)?)\\s*(?:(${UNIT_PATTERN})\\b)?\\s*(?:de\\s+)?(.+)$`,
     'i'
   );
-  const leadingMatch = leadingDosageRegex.test(line) ? null : line.match(leadingRegex);
+  const leadingMatch =
+    leadingDosageRegex.test(line) || leadingBrandRegex.test(line) ? null : line.match(leadingRegex);
 
   if (leadingMatch) {
     const [, rawQty, rawUnit, rest] = leadingMatch;
     const cleanedRest = rest.trim();
-    // Avoid misinterpreting something like "500mg" alone or when rest is empty
+    const numericCandidate = Number(rawQty.replace(',', '.'));
+    // Avoid misinterpreting "0 leite" as valid quantity or empty rest
     if (cleanedRest.length >= 2) {
-      quantity = parseNumber(rawQty);
-      if (rawUnit) {
+      quantity = Number.isFinite(numericCandidate) && numericCandidate > 0 ? numericCandidate : 1;
+      if (rawUnit && numericCandidate > 0) {
         unit = UNIT_ALIASES[rawUnit.toLowerCase()] ?? 'un';
       }
       name = cleanedRest;
@@ -151,6 +154,9 @@ export function parseSingleItem(rawLine: string): ParsedItemInput | null {
     );
     const trailingXRegex = /^(.+?)\s+[xX]\s*(\d+(?:[.,]\d+)?)$/;
     const trailingPlainNumberRegex = /^(.+?)\s+(\d+(?:[.,]\d+)?)$/;
+    // Protect product specs like "Fralda tamanho 3", "Ômega 3", "FPS 50", "Vitamina B12", "Café tipo 1"
+    const trailingSpecPrefixRegex =
+      /(?:tamanho|tam\.?|n[º°]?|tipo|fase|etapa|[ôo]mega|fps|fator|vol\.?|vitamina\s*[a-z]?|grau|passo)$/i;
 
     const m1 = line.match(trailingQtyUnitRegex);
     const m2 = !m1 ? line.match(trailingXRegex) : null;
@@ -164,12 +170,12 @@ export function parseSingleItem(rawLine: string): ParsedItemInput | null {
       name = m2[1].trim();
       quantity = parseNumber(m2[2]);
       unit = 'un';
-    } else if (m3 && m3[1].trim().length >= 2) {
-      // Only treat trailing plain number as quantity if it's small (<= 50) so we don't break "Vitamina B12" or "Dipirona 500"
-      const candidateQty = parseNumber(m3[2]);
-      if (candidateQty <= 50) {
+    } else if (m3 && m3[1].trim().length >= 2 && !trailingSpecPrefixRegex.test(m3[1].trim())) {
+      // Only treat trailing plain number as quantity if positive and <= 50
+      const rawCandidate = Number(m3[2].replace(',', '.'));
+      if (Number.isFinite(rawCandidate) && rawCandidate > 0 && rawCandidate <= 50) {
         name = m3[1].trim();
-        quantity = candidateQty;
+        quantity = rawCandidate;
         unit = 'un';
       }
     }

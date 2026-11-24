@@ -107,13 +107,13 @@ export function setLastActiveListId(listId: string): void {
 }
 
 /**
- * Gera um código curto criptograficamente aleatório no formato `PEGA-XXXXXX` (6 caracteres).
+ * Gera um código curto criptograficamente aleatório no formato `PEGA-XXXXXXXX` (8 caracteres).
  *
  * @returns Código de compartilhamento único para convites.
  */
 export function generateShareCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = new Uint8Array(6);
+  const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
   let suffix = '';
   for (let i = 0; i < bytes.length; i++) {
@@ -249,7 +249,7 @@ export async function createList(name: string, type: ListType): Promise<Shopping
 }
 
 /**
- * Exclui uma lista, todos os seus itens locais e mutações obsoletas, enfileirando o `delete_list`.
+ * Exclui uma lista (como proprietário), todos os seus itens locais e mutações obsoletas, enfileirando o `delete_list`.
  *
  * @param listId - UUID da lista a ser removida.
  */
@@ -259,6 +259,21 @@ export async function deleteList(listId: string): Promise<void> {
     await db.lists.delete(listId);
     await db.pendingSync.where('listId').equals(listId).delete();
     await enqueueSync('delete_list', listId, listId, { id: listId });
+  });
+}
+
+/**
+ * Remove uma lista compartilhada do aparelho atual (como convidado) e enfileira `leave_list`
+ * para encerrar o vínculo em `list_members` sem apagar a lista para os demais participantes.
+ *
+ * @param listId - UUID da lista compartilhada da qual o usuário está saindo.
+ */
+export async function leaveList(listId: string): Promise<void> {
+  await db.transaction('rw', db.lists, db.items, db.pendingSync, async () => {
+    await db.items.where('listId').equals(listId).delete();
+    await db.lists.delete(listId);
+    await db.pendingSync.where('listId').equals(listId).delete();
+    await enqueueSync('leave_list', listId, listId, { id: listId });
   });
 }
 
@@ -397,18 +412,29 @@ export async function toggleItemChecked(item: ShoppingItem): Promise<void> {
 }
 
 /**
- * Calcula o passo de incremento/decremento adequado para a unidade de medida do item.
+ * Calcula o passo simétrico de incremento/decremento adequado para a unidade de medida do item.
  *
  * @param unit - Unidade do item (`g`, `ml`, `kg`, `L`, `un`, etc.).
  * @param currentQty - Quantidade atual do item.
- * @returns Incremento numérico recomendado para o stepper touch.
+ * @param direction - Direção do ajuste (`'inc'` para aumentar ou `'dec'` para diminuir).
+ * @returns Incremento numérico simétrico recomendado para o stepper touch.
  */
-export function getQuantityStep(unit: string, currentQty: number): number {
+export function getQuantityStep(
+  unit: string,
+  currentQty: number,
+  direction: 'inc' | 'dec' = 'inc'
+): number {
   if (unit === 'g' || unit === 'ml') {
-    return currentQty <= 100 ? 50 : 100;
+    if (direction === 'dec') {
+      return currentQty <= 100 || (currentQty < 200 && currentQty % 100 !== 0) ? 50 : 100;
+    }
+    return currentQty < 100 ? 50 : 100;
   }
   if (unit === 'kg' || unit === 'L') {
-    return !Number.isInteger(currentQty) || currentQty <= 1 ? 0.5 : 1;
+    if (direction === 'dec') {
+      return !Number.isInteger(currentQty) || currentQty <= 1 ? 0.5 : 1;
+    }
+    return !Number.isInteger(currentQty) || currentQty < 1 ? 0.5 : 1;
   }
   return 1;
 }
@@ -459,7 +485,7 @@ export async function updateItemQuantity(item: ShoppingItem, delta: number): Pro
  * @param item - Item a ser incrementado.
  */
 export async function incrementItemQuantity(item: ShoppingItem): Promise<void> {
-  const step = getQuantityStep(item.unit, item.quantity);
+  const step = getQuantityStep(item.unit, item.quantity, 'inc');
   await updateItemQuantity(item, step);
 }
 
@@ -471,7 +497,7 @@ export async function incrementItemQuantity(item: ShoppingItem): Promise<void> {
  */
 export async function decrementItemQuantity(item: ShoppingItem): Promise<void> {
   if (isAtMinQuantity(item)) return;
-  const step = getQuantityStep(item.unit, item.quantity);
+  const step = getQuantityStep(item.unit, item.quantity, 'dec');
   await updateItemQuantity(item, -step);
 }
 
@@ -487,7 +513,7 @@ export async function decrementOrMarkChecked(item: ShoppingItem): Promise<'updat
     await toggleItemChecked(item);
     return 'checked';
   }
-  const step = getQuantityStep(item.unit, item.quantity);
+  const step = getQuantityStep(item.unit, item.quantity, 'dec');
   await updateItemQuantity(item, -step);
   return 'updated';
 }

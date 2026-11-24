@@ -1,5 +1,5 @@
 -- ============================================================================
--- PegaLá — Schema Supabase (PostgreSQL + Realtime + RLS + RPC)
+-- PegaLá — Schema Supabase (PostgreSQL + Realtime + RLS + RPC + Rate Limit)
 -- Execute este script no SQL Editor do seu projeto Supabase.
 -- ============================================================================
 
@@ -35,6 +35,19 @@ create table if not exists public.list_items (
 
 create index if not exists idx_list_items_list_id on public.list_items (list_id);
 
+-- Limpa eventuais duplicatas antigas antes de criar o índice único por (list_id, normalized_name)
+delete from public.list_items a
+using public.list_items b
+where a.list_id = b.list_id
+  and a.normalized_name = b.normalized_name
+  and (
+    a.updated_at < b.updated_at
+    or (a.updated_at = b.updated_at and a.id::text < b.id::text)
+  );
+
+create unique index if not exists idx_list_items_list_normalized_unique
+  on public.list_items (list_id, normalized_name);
+
 -- 3. Tabela de Membros (vínculo de sessões anônimas ou contas Google)
 create table if not exists public.list_members (
   list_id uuid not null references public.lists(id) on delete cascade,
@@ -44,7 +57,66 @@ create table if not exists public.list_members (
   primary key (list_id, user_id)
 );
 
--- 4. Trigger: registra automaticamente o criador como owner em list_members
+-- 3b. Tabela interna de controle de tentativas de entrada por código (anti força bruta)
+create table if not exists public.join_attempts (
+  id bigserial primary key,
+  user_id uuid not null,
+  attempted_at timestamptz not null default now()
+);
+
+create index if not exists idx_join_attempts_user_time
+  on public.join_attempts (user_id, attempted_at desc);
+
+-- 4. Triggers de integridade, timestamps autoritativos e proteção de colunas imutáveis
+
+-- 4a. Timestamp updated_at autoritativo no servidor (evita conflitos por relógio desalinhado)
+create or replace function public.set_server_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_lists_server_updated_at on public.lists;
+create trigger trg_lists_server_updated_at
+  before insert or update on public.lists
+  for each row
+  execute function public.set_server_updated_at();
+
+drop trigger if exists trg_list_items_server_updated_at on public.list_items;
+create trigger trg_list_items_server_updated_at
+  before insert or update on public.list_items
+  for each row
+  execute function public.set_server_updated_at();
+
+-- 4b. Protege owner_id e share_code contra alteração indevida por convidados
+create or replace function public.guard_lists_immutable_fields()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.owner_id is distinct from old.owner_id then
+    raise exception 'owner_id cannot be changed' using errcode = '42501';
+  end if;
+
+  if new.share_code is distinct from old.share_code and old.owner_id is distinct from auth.uid() then
+    raise exception 'Only the list owner can change share_code' using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_lists_guard_immutable on public.lists;
+create trigger trg_lists_guard_immutable
+  before update on public.lists
+  for each row
+  execute function public.guard_lists_immutable_fields();
+
+-- 4c. Registra automaticamente o criador como owner em list_members
 create or replace function public.handle_new_list_member()
 returns trigger
 language plpgsql
@@ -67,7 +139,7 @@ create trigger trg_lists_add_owner_member
   for each row
   execute function public.handle_new_list_member();
 
--- 5. RPC segura para entrar em uma lista via share_code (sem expor listagem pública)
+-- 5. RPC segura para entrar em uma lista via share_code (com rate limit anti força bruta)
 create or replace function public.join_list_by_share_code(p_share_code text)
 returns setof public.lists
 language plpgsql
@@ -77,7 +149,29 @@ as $$
 declare
   v_list public.lists%rowtype;
   v_uid uuid := auth.uid();
+  v_recent_attempts integer := 0;
 begin
+  if v_uid is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  -- Limpa registros com mais de 5 minutos deste usuário e verifica limite (10/min)
+  delete from public.join_attempts
+   where user_id = v_uid
+     and attempted_at < now() - interval '5 minutes';
+
+  select count(*)
+    into v_recent_attempts
+    from public.join_attempts
+   where user_id = v_uid
+     and attempted_at >= now() - interval '1 minute';
+
+  if v_recent_attempts >= 10 then
+    raise exception 'Muitas tentativas. Aguarde 1 minuto e tente novamente.' using errcode = 'P0001';
+  end if;
+
+  insert into public.join_attempts (user_id) values (v_uid);
+
   select *
     into v_list
     from public.lists
@@ -88,11 +182,9 @@ begin
     return;
   end if;
 
-  if v_uid is not null then
-    insert into public.list_members (list_id, user_id, role)
-    values (v_list.id, v_uid, 'editor')
-    on conflict (list_id, user_id) do nothing;
-  end if;
+  insert into public.list_members (list_id, user_id, role)
+  values (v_list.id, v_uid, 'editor')
+  on conflict (list_id, user_id) do nothing;
 
   return next v_list;
 end;
@@ -101,10 +193,27 @@ $$;
 grant execute on function public.join_list_by_share_code(text) to anon, authenticated;
 
 -- 6. Habilitar Realtime para sincronização instantânea entre dispositivos
--- REPLICA IDENTITY FULL garante que eventos DELETE incluam list_id para o filtro Realtime
+-- REPLICA IDENTITY FULL garante que eventos DELETE incluam filtros em lists e list_items
+alter table public.lists replica identity full;
 alter table public.list_items replica identity full;
-alter publication supabase_realtime add table public.lists;
-alter publication supabase_realtime add table public.list_items;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'lists'
+  ) then
+    alter publication supabase_realtime add table public.lists;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'list_items'
+  ) then
+    alter publication supabase_realtime add table public.list_items;
+  end if;
+end;
+$$;
 
 -- 7. Helper de autorização (evita recursão de RLS)
 create or replace function public.is_list_member(p_list_id uuid)
@@ -128,10 +237,18 @@ $$;
 alter table public.lists enable row level security;
 alter table public.list_items enable row level security;
 alter table public.list_members enable row level security;
+alter table public.join_attempts enable row level security;
 
 drop policy if exists "lists_collaborative_access" on public.lists;
 drop policy if exists "list_items_collaborative_access" on public.list_items;
 drop policy if exists "list_members_self_manage" on public.list_members;
+drop policy if exists "lists_select_member" on public.lists;
+drop policy if exists "lists_insert_authenticated" on public.lists;
+drop policy if exists "lists_update_member" on public.lists;
+drop policy if exists "lists_delete_owner" on public.lists;
+drop policy if exists "list_items_member_access" on public.list_items;
+drop policy if exists "list_members_select_self" on public.list_members;
+drop policy if exists "list_members_delete_self" on public.list_members;
 
 create policy "lists_select_member"
   on public.lists
@@ -160,16 +277,23 @@ create policy "list_items_member_access"
   using (public.is_list_member(list_id))
   with check (public.is_list_member(list_id));
 
-create policy "list_members_self_manage"
+-- list_members: usuário só pode ler e sair (DELETE) do próprio vínculo; INSERT/UPDATE são exclusivos via RPC/Trigger
+create policy "list_members_select_self"
   on public.list_members
-  for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  for select
+  using (auth.uid() = user_id);
+
+create policy "list_members_delete_self"
+  on public.list_members
+  for delete
+  using (auth.uid() = user_id);
 
 -- 9. Permissões explícitas para roles anon e authenticated (obrigatório no Supabase atual)
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on public.lists to anon, authenticated;
 grant select, insert, update, delete on public.list_items to anon, authenticated;
-grant select, insert, update, delete on public.list_members to anon, authenticated;
+revoke insert, update on public.list_members from anon, authenticated;
+grant select, delete on public.list_members to anon, authenticated;
+revoke all on public.join_attempts from anon, authenticated;
 grant execute on function public.is_list_member(uuid) to anon, authenticated;
 grant execute on function public.join_list_by_share_code(text) to anon, authenticated;

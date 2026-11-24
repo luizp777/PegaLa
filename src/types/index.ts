@@ -114,9 +114,9 @@ export interface UserDictionaryEntry {
 export type SyncActionType =
   | 'upsert_list'
   | 'delete_list'
+  | 'leave_list'
   | 'upsert_item'
-  | 'delete_item'
-  | 'clear_checked';
+  | 'delete_item';
 
 /**
  * Mutação pendente na fila local de sincronização com o Supabase.

@@ -1,5 +1,5 @@
 import type { PostgrestError, RealtimeChannel } from '@supabase/supabase-js';
-import { db } from './localDb';
+import { db, generateShareCode } from './localDb';
 import { ensureSupabaseSession, isSupabaseConfigured, supabase } from '../lib/supabase';
 import { serializeError, syncLogger } from '../lib/logger';
 import type { CategoryId, ListType, PendingSyncMutation, ShoppingItem, ShoppingList } from '../types';
@@ -163,8 +163,50 @@ function isPermanentError(error: PostgrestError | null): boolean {
  */
 function mutationPriority(action: PendingSyncMutation['action']): number {
   if (action === 'upsert_list') return 0;
-  if (action === 'delete_list') return 2;
+  if (action === 'delete_list' || action === 'leave_list') return 2;
   return 1;
+}
+
+/**
+ * Executa upsert de uma lista no Supabase tratando eventual colisão de `share_code` (`23505`)
+ * com regeneração automática do código local (até 3 tentativas).
+ *
+ * @param list - Lista local a ser enviada.
+ * @param userId - UUID do usuário autenticado.
+ * @returns Erro PostgREST final ou `null` em caso de sucesso.
+ */
+async function upsertListWithCodeRetry(
+  list: ShoppingList,
+  userId: string
+): Promise<PostgrestError | null> {
+  if (!supabase) return null;
+  let candidate = list;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { error } = await supabase
+      .from('lists')
+      .upsert(toRemoteList(candidate, userId), { onConflict: 'id' });
+
+    if (!error) return null;
+
+    if (error.code === '23505') {
+      const nextCode = generateShareCode();
+      syncLogger.warn('Colisão de share_code detectada (23505); regenerando código', {
+        listId: candidate.id,
+        attempt: attempt + 1,
+      });
+      candidate = { ...candidate, shareCode: nextCode, updatedAt: new Date().toISOString() };
+      await db.lists.update(candidate.id, {
+        shareCode: nextCode,
+        updatedAt: candidate.updatedAt,
+      });
+      continue;
+    }
+
+    return error;
+  }
+
+  return null;
 }
 
 let activeChannel: RealtimeChannel | null = null;
@@ -203,16 +245,14 @@ export async function flushPendingSync(): Promise<boolean> {
     // Seed any local-only lists (created before Supabase was configured) into the cloud first
     const unsyncedLists = await db.lists.filter((l) => !l.isSynced).toArray();
     for (const localList of unsyncedLists) {
-      const { error: listErr } = await supabase
-        .from('lists')
-        .upsert(toRemoteList(localList, user.id), { onConflict: 'id' });
+      const listErr = await upsertListWithCodeRetry(localList, user.id);
       if (!listErr) {
         const localItems = await db.items.where('listId').equals(localList.id).toArray();
         let itemsErr: PostgrestError | null = null;
         if (localItems.length > 0) {
           const res = await supabase
             .from('list_items')
-            .upsert(localItems.map(toRemoteItem), { onConflict: 'id' });
+            .upsert(localItems.map(toRemoteItem), { onConflict: 'list_id,normalized_name' });
           itemsErr = res.error;
         }
         if (!itemsErr) {
@@ -258,31 +298,29 @@ export async function flushPendingSync(): Promise<boolean> {
 
       if (mut.action === 'upsert_list') {
         const list = mut.payload as unknown as ShoppingList;
-        const res = await supabase
-          .from('lists')
-          .upsert(toRemoteList(list, user?.id ?? null), { onConflict: 'id' });
-        error = res.error;
+        error = await upsertListWithCodeRetry(list, user.id);
         if (!error) {
           await db.lists.update(list.id, { isSynced: true });
         }
       } else if (mut.action === 'delete_list') {
         const res = await supabase.from('lists').delete().eq('id', mut.entityId);
         error = res.error;
+      } else if (mut.action === 'leave_list') {
+        const res = await supabase
+          .from('list_members')
+          .delete()
+          .eq('list_id', mut.listId)
+          .eq('user_id', user.id);
+        error = res.error;
       } else if (mut.action === 'upsert_item') {
         const item = mut.payload as unknown as ShoppingItem;
         const res = await supabase
           .from('list_items')
-          .upsert(toRemoteItem(item), { onConflict: 'id' });
+          .upsert(toRemoteItem(item), { onConflict: 'list_id,normalized_name' });
         error = res.error;
       } else if (mut.action === 'delete_item') {
         const res = await supabase.from('list_items').delete().eq('id', mut.entityId);
         error = res.error;
-      } else if (mut.action === 'clear_checked') {
-        const itemIds = (mut.payload.itemIds as string[]) ?? [];
-        if (itemIds.length > 0) {
-          const res = await supabase.from('list_items').delete().in('id', itemIds);
-          error = res.error;
-        }
       }
 
       if (!error) {
@@ -460,10 +498,16 @@ export async function pullListFromCloud(listId: string): Promise<void> {
     const localMap = new Map(localItems.map((i) => [i.id, i]));
 
     // 1. Upsert remote items that are newer or missing locally (without clobbering pending local edits)
+    // Also deduplicate offline-created items sharing the same normalizedName with a different local ID
+    const localByNormalized = new Map(localItems.map((i) => [i.normalizedName, i]));
     for (const remoteItem of remoteMap.values()) {
       if (pendingEntityIds.has(remoteItem.id)) continue;
-      const local = localMap.get(remoteItem.id);
-      if (!local || new Date(remoteItem.updatedAt) >= new Date(local.updatedAt)) {
+      const localSameId = localMap.get(remoteItem.id);
+      const localSameName = localByNormalized.get(remoteItem.normalizedName);
+      if (localSameName && localSameName.id !== remoteItem.id && !pendingEntityIds.has(localSameName.id)) {
+        await db.items.delete(localSameName.id);
+      }
+      if (!localSameId || new Date(remoteItem.updatedAt) >= new Date(localSameId.updatedAt)) {
         await db.items.put(remoteItem);
       }
     }
@@ -505,9 +549,7 @@ export async function syncListNow(listId: string): Promise<boolean> {
 
     const canUpsertList = !localList.isSynced || !localList.ownerId || localList.ownerId === user.id;
     if (canUpsertList) {
-      const { error: listErr } = await supabase
-        .from('lists')
-        .upsert(toRemoteList(localList, user.id), { onConflict: 'id' });
+      const listErr = await upsertListWithCodeRetry(localList, user.id);
       if (listErr) {
         syncLogger.warn('Falha em syncListNow ao enviar lista', {
           listId,
@@ -521,7 +563,7 @@ export async function syncListNow(listId: string): Promise<boolean> {
     if (localItems.length > 0) {
       const { error: itemsErr } = await supabase
         .from('list_items')
-        .upsert(localItems.map(toRemoteItem), { onConflict: 'id' });
+        .upsert(localItems.map(toRemoteItem), { onConflict: 'list_id,normalized_name' });
       if (itemsErr) {
         syncLogger.warn('Falha em syncListNow ao enviar itens', {
           listId,
@@ -665,6 +707,40 @@ export function subscribeToListRealtime(listId: string): () => void {
               }
             } catch (err) {
               syncLogger.error('Erro ao aplicar evento Realtime no IndexedDB', {
+                listId,
+                eventType: payload.eventType,
+                error: serializeError(err),
+              });
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'lists',
+            filter: `id=eq.${listId}`,
+          },
+          async (payload) => {
+            try {
+              if (payload.eventType === 'DELETE') {
+                await db.transaction('rw', db.lists, db.items, db.pendingSync, async () => {
+                  await db.items.where('listId').equals(listId).delete();
+                  await db.lists.delete(listId);
+                  await db.pendingSync.where('listId').equals(listId).delete();
+                });
+              } else if (payload.eventType === 'UPDATE') {
+                const row = payload.new as RemoteListRow;
+                if (!row?.id) return;
+                await db.lists.update(row.id, {
+                  name: row.name,
+                  type: row.type,
+                  updatedAt: row.updated_at,
+                });
+              }
+            } catch (err) {
+              syncLogger.error('Erro ao aplicar evento Realtime da lista no IndexedDB', {
                 listId,
                 eventType: payload.eventType,
                 error: serializeError(err),

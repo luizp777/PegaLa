@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   ChevronDown,
   Lock,
+  LogOut,
   Moon,
   Plus,
   Share2,
@@ -14,7 +15,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import type { ShoppingList } from '../types';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { ListTypeIcon } from './ItemIcon';
 
 /**
@@ -33,8 +34,10 @@ interface HeaderProps {
   onSelectList: (id: string) => void;
   /** Abre o modal de criação de nova lista. */
   onOpenCreateList: () => void;
-  /** Callback acionado para excluir uma lista pelo seu ID. */
+  /** Callback acionado para excluir uma lista como proprietário pelo seu ID. */
   onDeleteList: (id: string) => void;
+  /** Callback acionado para sair de uma lista compartilhada como convidado pelo seu ID. */
+  onLeaveList: (id: string) => void;
   /** Abre o modal de compartilhamento e convites. */
   onOpenShare: () => void;
   /** Indica se o tema escuro está ativo. */
@@ -68,6 +71,7 @@ export function Header({
   onSelectList,
   onOpenCreateList,
   onDeleteList,
+  onLeaveList,
   onOpenShare,
   isDark,
   onToggleTheme,
@@ -79,7 +83,15 @@ export function Header({
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen || !supabase) return;
+    void supabase.auth.getSession().then(({ data }) => {
+      setCurrentUserId(data.session?.user?.id ?? null);
+    });
+  }, [menuOpen]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -137,12 +149,12 @@ export function Header({
                 </h1>
                 {activeList && (
                   activeList.isShared ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-500/12 px-2 py-0.5 text-[10px] font-bold text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
-                      <Users className="h-2.5 w-2.5" />
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-500/12 px-2 py-0.5 text-[11px] font-bold text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
+                      <Users className="h-3 w-3" />
                       <span>Compartilhada</span>
                     </span>
                   ) : (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                       <Lock className="h-2.5 w-2.5" />
                       <span>Privada</span>
                     </span>
@@ -219,12 +231,12 @@ export function Header({
                           <div className="flex items-center gap-1.5">
                             <span className="truncate text-sm font-semibold">{list.name}</span>
                             {list.isShared ? (
-                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-sky-600 dark:text-sky-300">
+                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-bold text-sky-600 dark:text-sky-300">
                                 <Users className="h-2.5 w-2.5" />
                                 Compartilhada
                               </span>
                             ) : (
-                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-zinc-200/70 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-zinc-200/70 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                                 <Lock className="h-2.5 w-2.5" />
                                 Privada
                               </span>
@@ -233,20 +245,36 @@ export function Header({
                           <div className="text-[11px] text-zinc-400">{list.shareCode}</div>
                         </div>
                       </button>
-                      {lists.length > 1 && (
-                        confirmDeleteId === list.id ? (
+                      {lists.length > 1 && (() => {
+                        const isGuest = Boolean(
+                          list.isShared && list.ownerId && currentUserId && list.ownerId !== currentUserId
+                        );
+                        const confirmLabel = isGuest
+                          ? 'Sair?'
+                          : list.isShared
+                            ? 'Apagar p/ todos?'
+                            : 'Confirmar?';
+                        return confirmDeleteId === list.id ? (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onDeleteList(list.id);
+                              if (isGuest) {
+                                onLeaveList(list.id);
+                              } else {
+                                onDeleteList(list.id);
+                              }
                               setConfirmDeleteId(null);
                               setMenuOpen(false);
                             }}
                             className="ml-1 shrink-0 rounded-lg bg-red-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-red-500 active:scale-95"
-                            aria-label={`Confirmar exclusão de ${list.name}`}
+                            aria-label={
+                              isGuest
+                                ? `Confirmar saída de ${list.name}`
+                                : `Confirmar exclusão de ${list.name}`
+                            }
                           >
-                            Confirmar?
+                            {confirmLabel}
                           </button>
                         ) : (
                           <button
@@ -256,12 +284,13 @@ export function Header({
                               setConfirmDeleteId(list.id);
                             }}
                             className="ml-1 rounded-lg p-1.5 text-zinc-400 opacity-70 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                            aria-label={`Excluir ${list.name}`}
+                            aria-label={isGuest ? `Sair de ${list.name}` : `Excluir ${list.name}`}
+                            title={isGuest ? 'Sair desta lista compartilhada' : 'Excluir lista'}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {isGuest ? <LogOut className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
                           </button>
-                        )
-                      )}
+                        );
+                      })()}
                     </div>
                   );
                 })}

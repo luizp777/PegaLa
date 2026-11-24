@@ -22,7 +22,16 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons/icon-192.svg', 'icons/icon-512.svg', 'icons/maskable-icon.svg'],
+      includeAssets: [
+        'favicon.svg',
+        'icons/icon-192.svg',
+        'icons/icon-512.svg',
+        'icons/maskable-icon.svg',
+        'icons/icon-192.png',
+        'icons/icon-512.png',
+        'icons/maskable-icon-512.png',
+        'icons/apple-touch-icon.png',
+      ],
       manifest: {
         name: 'PegaLá — Lista Rápida de Compras',
         short_name: 'PegaLá',
@@ -35,6 +44,24 @@ export default defineConfig({
         start_url: '/',
         lang: 'pt-BR',
         icons: [
+          {
+            src: '/icons/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/icons/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/icons/maskable-icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
           {
             src: '/icons/icon-192.svg',
             sizes: '192x192',

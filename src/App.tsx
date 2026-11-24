@@ -8,6 +8,7 @@ import {
   deleteItem,
   deleteList,
   incrementItemQuantity,
+  leaveList,
   restoreDeletedItem,
   setItemExactQuantityAndUnit,
   toggleItemChecked,
@@ -206,6 +207,18 @@ export function App() {
     }
   };
 
+  const handleLeaveList = async (id: string) => {
+    const target = lists.find((l) => l.id === id);
+    await leaveList(id);
+    const remaining = lists.filter((l) => l.id !== id);
+    if (remaining.length > 0) {
+      selectList(remaining[0].id);
+    }
+    if (target) {
+      showToast(`Você saiu da lista "${target.name}"`);
+    }
+  };
+
   const handleCategorySelected = async (item: ShoppingItem, categoryId: CategoryId) => {
     await updateItemCategory(item, categoryId);
     showToast('Corredor atualizado e aprendido!');
@@ -221,6 +234,7 @@ export function App() {
         onSelectList={selectList}
         onOpenCreateList={() => setCreateOpen(true)}
         onDeleteList={handleDeleteList}
+        onLeaveList={handleLeaveList}
         onOpenShare={() => setShareOpen(true)}
         isDark={isDark}
         onToggleTheme={toggleTheme}
