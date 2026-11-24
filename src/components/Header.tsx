@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   ChevronDown,
+  Lock,
   Moon,
   Plus,
   Share2,
   Sun,
   Trash2,
+  Users,
   WifiOff,
   Zap,
   Cloud,
@@ -119,7 +121,13 @@ export function Header({
             className="flex min-h-[44px] max-w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition hover:bg-zinc-100 active:scale-[0.99] dark:hover:bg-zinc-900"
             aria-label="Trocar lista"
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+            <span
+              className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                activeList?.isShared
+                  ? 'bg-sky-500/12 text-sky-600 ring-1 ring-sky-500/25 dark:bg-sky-500/15 dark:text-sky-400'
+                  : 'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400'
+              }`}
+            >
               <ListTypeIcon type={activeList?.type ?? 'mercado'} className="h-5 w-5" />
             </span>
             <div className="min-w-0">
@@ -127,6 +135,19 @@ export function Header({
                 <h1 className="truncate text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-lg">
                   {activeList?.name ?? 'PegaLá'}
                 </h1>
+                {activeList && (
+                  activeList.isShared ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-500/12 px-2 py-0.5 text-[10px] font-bold text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
+                      <Users className="h-2.5 w-2.5" />
+                      <span>Compartilhada</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                      <Lock className="h-2.5 w-2.5" />
+                      <span>Privada</span>
+                    </span>
+                  )
+                )}
                 <ChevronDown
                   className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${
                     menuOpen ? 'rotate-180' : ''
@@ -195,7 +216,20 @@ export function Header({
                           }`}
                         />
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold">{list.name}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-sm font-semibold">{list.name}</span>
+                            {list.isShared ? (
+                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-bold text-sky-600 dark:text-sky-300">
+                                <Users className="h-2.5 w-2.5" />
+                                Compartilhada
+                              </span>
+                            ) : (
+                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-zinc-200/70 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                <Lock className="h-2.5 w-2.5" />
+                                Privada
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[11px] text-zinc-400">{list.shareCode}</div>
                         </div>
                       </button>

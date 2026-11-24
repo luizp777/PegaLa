@@ -77,7 +77,7 @@ function toRemoteList(list: ShoppingList, userId: string | null): RemoteListRow 
  * @param row - Registro retornado pelo Supabase.
  * @returns Lista local marcada como sincronizada.
  */
-function fromRemoteList(row: RemoteListRow): ShoppingList {
+function fromRemoteList(row: RemoteListRow, isShared = false): ShoppingList {
   return {
     id: row.id,
     name: row.name,
@@ -85,6 +85,7 @@ function fromRemoteList(row: RemoteListRow): ShoppingList {
     shareCode: row.share_code,
     ownerId: row.owner_id,
     isSynced: true,
+    isShared,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -376,7 +377,7 @@ export async function joinSharedListByCode(rawCode: string): Promise<{
       return { list: null, error: 'Lista não encontrada. Verifique o código e tente novamente.' };
     }
 
-    const list = fromRemoteList(listRow);
+    const list = fromRemoteList(listRow, true);
     await db.lists.put(list);
 
     const { data: itemRows, error: itemsError } = await supabase
@@ -521,6 +522,7 @@ export async function syncListNow(listId: string): Promise<boolean> {
     await db.lists.update(listId, {
       isSynced: true,
       ownerId: localList.ownerId ?? user.id,
+      ...(localList.ownerId && localList.ownerId !== user.id ? { isShared: true } : {}),
     });
     return true;
   } catch (err) {

@@ -54,6 +54,8 @@ export interface ShoppingList {
   ownerId: string | null;
   /** Indica se a lista já foi enviada com sucesso ao backend remoto. */
   isSynced: boolean;
+  /** Indica se a lista é compartilhada (convite aceito ou compartilhada pelo dono). */
+  isShared?: boolean;
   /** Timestamp ISO 8601 de criação da lista. */
   createdAt: string;
   /** Timestamp ISO 8601 da última atualização da lista. */

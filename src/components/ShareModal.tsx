@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Check, Copy, Link2, LogIn, LogOut, MessageCircle, QrCode, X } from 'lucide-react';
+import { Check, Copy, Link2, Lock, LogIn, LogOut, MessageCircle, QrCode, Users, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@supabase/supabase-js';
 import type { ShoppingList } from '../types';
+import { db } from '../db/localDb';
 import { isSupabaseConfigured, signInWithGoogle, signOutUser, supabase } from '../lib/supabase';
 import { serializeError, uiLogger } from '../lib/logger';
 import { joinSharedListByCode, syncListNow } from '../db/syncEngine';
@@ -59,9 +60,16 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
 
   const shareUrl = `${window.location.origin}/?join=${encodeURIComponent(list.shareCode)}`;
 
+  const markListAsShared = () => {
+    if (!list.isShared) {
+      void db.lists.update(list.id, { isShared: true });
+    }
+  };
+
   const handleCopy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      markListAsShared();
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -71,6 +79,7 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
   };
 
   const handleWhatsAppShare = () => {
+    markListAsShared();
     const msg = `Entra na nossa lista "${list.name}" no PegaLá!\nCódigo: ${list.shareCode}\nLink: ${shareUrl}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
   };
@@ -105,9 +114,22 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
       >
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
-              Compartilhar "{list.name}"
-            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
+                Compartilhar "{list.name}"
+              </h2>
+              {list.isShared ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/12 px-2 py-0.5 text-[10px] font-bold text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
+                  <Users className="h-3 w-3" />
+                  Compartilhada
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  <Lock className="h-2.5 w-2.5" />
+                  Privada
+                </span>
+              )}
+            </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Edite junto em tempo real com família ou parceiro(a)
             </p>
@@ -142,7 +164,10 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
               </button>
               <button
                 type="button"
-                onClick={() => setShowQr((v) => !v)}
+                onClick={() => {
+                  if (!showQr) markListAsShared();
+                  setShowQr((v) => !v);
+                }}
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-zinc-700 shadow-xs ring-1 ring-zinc-200 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200 dark:ring-zinc-700"
                 title="Mostrar QR Code"
               >

@@ -3,10 +3,12 @@ import {
   Check,
   ClipboardPaste,
   LayoutGrid,
+  Lock,
   Mic,
   MicOff,
   Plus,
   Sparkles,
+  Users,
 } from 'lucide-react';
 import { normalizeText, searchDictionary } from '../lib/dictionaryPtBr';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
@@ -373,19 +375,42 @@ export function QuickAddBar({
                     hapticLight();
                     onSelectList(list.id);
                   }}
-                  title={hasDuplicateName ? `${list.name} (${list.shareCode})` : list.name}
+                  title={`${list.name} · ${list.isShared ? 'Compartilhada' : 'Privada'} (${list.shareCode})`}
                   className={`flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold transition active:scale-95 ${
                     isCurrent
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                      ? list.isShared
+                        ? 'bg-sky-600 text-white shadow-xs'
+                        : 'bg-emerald-600 text-white shadow-xs'
+                      : list.isShared
+                        ? 'bg-sky-500/10 text-sky-700 ring-1 ring-sky-500/25 hover:bg-sky-500/15 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-500/30'
+                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
                   }`}
                 >
                   <ListTypeIcon type={list.type} className="h-3.5 w-3.5 shrink-0" />
                   <span className="max-w-[110px] truncate">{list.name}</span>
+                  {list.isShared ? (
+                    <Users
+                      className={`h-3 w-3 shrink-0 ${
+                        isCurrent ? 'text-sky-100' : 'text-sky-500 dark:text-sky-400'
+                      }`}
+                      aria-label="Lista compartilhada"
+                    />
+                  ) : (
+                    <Lock
+                      className={`h-2.5 w-2.5 shrink-0 ${
+                        isCurrent ? 'text-emerald-100/90' : 'text-zinc-400 dark:text-zinc-500'
+                      }`}
+                      aria-label="Lista privada"
+                    />
+                  )}
                   {hasDuplicateName && (
                     <span
                       className={`font-mono text-[10px] font-semibold ${
-                        isCurrent ? 'text-emerald-100' : 'text-zinc-400 dark:text-zinc-500'
+                        isCurrent
+                          ? list.isShared
+                            ? 'text-sky-100'
+                            : 'text-emerald-100'
+                          : 'text-zinc-400 dark:text-zinc-500'
                       }`}
                     >
                       · {shortCode}
