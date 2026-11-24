@@ -13,6 +13,10 @@ import type { CategoryId, ShoppingItem } from '../types';
  */
 export function useActiveList() {
   const [activeListId, setActiveListIdState] = useState<string | null>(null);
+  const [isJoiningSharedList, setIsJoiningSharedList] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(new URLSearchParams(window.location.search).get('join'));
+  });
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
@@ -21,21 +25,33 @@ export function useActiveList() {
   useEffect(() => {
     let mounted = true;
     async function init() {
-      const defaultId = await ensureDefaultLists();
       const params = new URLSearchParams(window.location.search);
       const joinCode = params.get('join');
 
       if (joinCode) {
+        if (mounted) setIsJoiningSharedList(true);
         const res = await joinSharedListByCode(joinCode);
+        if (!mounted) return;
+
         window.history.replaceState({}, '', window.location.pathname);
-        if (mounted && res.list) {
+
+        if (res.list) {
+          await ensureDefaultLists();
+          if (!mounted) return;
           setLastActiveListId(res.list.id);
           setActiveListIdState(res.list.id);
+          setIsJoiningSharedList(false);
           setJoinToast(`Lista "${res.list.name}" conectada!`);
           return;
         }
+
+        setIsJoiningSharedList(false);
+        if (res.error) {
+          setJoinToast(res.error);
+        }
       }
 
+      const defaultId = await ensureDefaultLists();
       if (mounted) {
         setActiveListIdState(defaultId);
       }
@@ -70,10 +86,10 @@ export function useActiveList() {
   const listsQuery = useLiveQuery(() => db.lists.orderBy('createdAt').toArray(), []);
   const lists = useMemo(() => listsQuery ?? [], [listsQuery]);
 
-  const activeList = useMemo(
-    () => lists.find((l) => l.id === activeListId) ?? lists[0] ?? null,
-    [lists, activeListId]
-  );
+  const activeList = useMemo(() => {
+    if (isJoiningSharedList) return null;
+    return lists.find((l) => l.id === activeListId) ?? lists[0] ?? null;
+  }, [lists, activeListId, isJoiningSharedList]);
 
   const itemsQuery = useLiveQuery(
     () => (activeList ? db.items.where('listId').equals(activeList.id).toArray() : []),
@@ -132,6 +148,7 @@ export function useActiveList() {
   return {
     lists,
     activeList,
+    isJoiningSharedList,
     items,
     groupedPending,
     checkedItems,

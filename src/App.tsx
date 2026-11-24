@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { LayoutGrid, Mic, RotateCcw, ShoppingBag } from 'lucide-react';
+import { LayoutGrid, Loader2, Mic, RotateCcw, ShoppingBag } from 'lucide-react';
 import {
   addItemsFromText,
   createList,
@@ -54,6 +54,7 @@ export function App() {
   const {
     lists,
     activeList,
+    isJoiningSharedList,
     groupedPending,
     checkedItems,
     frequentSuggestions,
@@ -250,8 +251,20 @@ export function App() {
 
       {/* Main Content (extra bottom padding for Thumb-Zone Dock + List Tabs) */}
       <main className="mx-auto max-w-2xl px-3 pb-44 pt-3.5 sm:px-4">
-        {/* Empty State */}
-        {pendingCount === 0 && checkedItems.length === 0 ? (
+        {/* Loading Shared List State */}
+        {isJoiningSharedList ? (
+          <div className="mt-12 flex flex-col items-center justify-center rounded-3xl border border-zinc-200/80 bg-white/70 px-6 py-12 text-center dark:border-zinc-800 dark:bg-zinc-900/40">
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400">
+              <Loader2 className="h-7 w-7 animate-spin" />
+            </div>
+            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+              Abrindo lista compartilhada...
+            </h2>
+            <p className="mt-1.5 max-w-xs text-sm text-zinc-500 dark:text-zinc-400">
+              Conectando e carregando os itens em tempo real.
+            </p>
+          </div>
+        ) : pendingCount === 0 && checkedItems.length === 0 ? (
           <div className="mt-8 flex flex-col items-center justify-center rounded-3xl border border-dashed border-zinc-300 bg-white/70 px-6 py-10 text-center dark:border-zinc-800 dark:bg-zinc-900/30">
             <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400">
               <ShoppingBag className="h-7 w-7" />
