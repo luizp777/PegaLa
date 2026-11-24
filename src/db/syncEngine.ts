@@ -191,6 +191,14 @@ export async function flushPendingSync(): Promise<boolean> {
     const user = await ensureSupabaseSession();
     if (!user) return false;
 
+    // Auto-detect shared lists belonging to another owner (e.g. joined before `isShared` existed)
+    const foreignLists = await db.lists
+      .filter((l) => Boolean(l.ownerId && l.ownerId !== user.id && !l.isShared))
+      .toArray();
+    for (const foreignList of foreignLists) {
+      await db.lists.update(foreignList.id, { isShared: true });
+    }
+
     // Seed any local-only lists (created before Supabase was configured) into the cloud first
     const unsyncedLists = await db.lists.filter((l) => !l.isSynced).toArray();
     for (const localList of unsyncedLists) {
@@ -420,6 +428,10 @@ export async function pullListFromCloud(listId: string): Promise<void> {
 
     const localList = await db.lists.get(listId);
     if (!localList?.isSynced) return;
+
+    if (localList.ownerId && localList.ownerId !== user.id && !localList.isShared) {
+      await db.lists.update(listId, { isShared: true });
+    }
 
     const { data: itemRows, error } = await supabase
       .from('list_items')
