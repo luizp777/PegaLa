@@ -457,7 +457,7 @@ export function ItemIcon({
       )}
 
       {isChecked && (
-        <span className="absolute -bottom-1 -right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xs ring-2 ring-white dark:ring-zinc-900">
+        <span className="animate-check-pop absolute -bottom-1 -right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xs ring-2 ring-white dark:ring-zinc-900">
           <Check className="h-3 w-3 stroke-[3]" />
         </span>
       )}

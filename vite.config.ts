@@ -21,7 +21,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: [
         'favicon.svg',
         'icons/icon-192.svg',
@@ -81,8 +81,25 @@ export default defineConfig({
             purpose: 'maskable',
           },
         ],
+        shortcuts: [
+          {
+            name: 'Lista de Mercado',
+            short_name: 'Mercado',
+            description: 'Abrir diretamente sua lista de mercado',
+            url: '/?list=mercado',
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+          },
+          {
+            name: 'Lista de Farmácia',
+            short_name: 'Farmácia',
+            description: 'Abrir diretamente sua lista de farmácia',
+            url: '/?list=farmacia',
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+          },
+        ],
       },
       workbox: {
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         runtimeCaching: [
           {

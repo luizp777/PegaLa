@@ -16,13 +16,17 @@ import {
   updateItemCategory,
 } from './db/localDb';
 import { useActiveList } from './hooks/useActiveList';
+import { usePwaInstall } from './hooks/usePwaInstall';
 import { useTheme } from './hooks/useTheme';
 import { useWakeLock } from './lib/wakeLock';
 import { hapticLight } from './lib/haptics';
 import { Header } from './components/Header';
 import { CategoryGroup } from './components/CategoryGroup';
 import { CheckedSection } from './components/CheckedSection';
+import { PwaInstallBanner } from './components/PwaInstallBanner';
+import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
 import { QuickAddBar, type QuickAddBarHandle } from './components/QuickAddBar';
+import { ShoppingCompleteCard } from './components/ShoppingCompleteCard';
 import type { CategoryId, ShoppingItem } from './types';
 
 const ShareModal = lazy(() =>
@@ -68,6 +72,7 @@ export function App() {
   } = useActiveList();
 
   const { isDark, toggleTheme } = useTheme();
+  const pwaInstall = usePwaInstall();
   const wakeLock = useWakeLock();
 
   const [shareOpen, setShareOpen] = useState(false);
@@ -247,7 +252,7 @@ export function App() {
 
       {/* Toast Notification with Optional Undo Action */}
       {activeToast && (
-        <div className="fixed inset-x-0 top-16 z-40 flex justify-center px-4">
+        <div className="animate-toast-in fixed inset-x-0 top-16 z-40 flex justify-center px-4">
           <div className="flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl dark:bg-zinc-800 dark:ring-1 dark:ring-zinc-700">
             <span>{activeToast.message}</span>
             {activeToast.undoItem && (
@@ -266,6 +271,14 @@ export function App() {
 
       {/* Main Content (extra bottom padding for Thumb-Zone Dock + List Tabs) */}
       <main className="mx-auto max-w-2xl px-3 pb-44 pt-3.5 sm:px-4">
+        {pwaInstall.canShowBanner && (
+          <PwaInstallBanner
+            isIosManualInstall={pwaInstall.isIosManualInstall}
+            onInstall={() => void pwaInstall.promptInstall()}
+            onDismiss={pwaInstall.dismissInstall}
+          />
+        )}
+
         {/* Loading Shared List State */}
         {isJoiningSharedList ? (
           <div className="mt-12 flex flex-col items-center justify-center rounded-3xl border border-zinc-200/80 bg-white/70 px-6 py-12 text-center dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -280,7 +293,7 @@ export function App() {
             </p>
           </div>
         ) : isLoadingList ? null : pendingCount === 0 && checkedItems.length === 0 ? (
-          <div className="mt-8 flex flex-col items-center justify-center rounded-3xl border border-dashed border-zinc-300 bg-white/70 px-6 py-10 text-center dark:border-zinc-800 dark:bg-zinc-900/30">
+          <div className="animate-fade-slide-up mt-8 flex flex-col items-center justify-center rounded-3xl border border-dashed border-zinc-300 bg-white/70 px-6 py-10 text-center dark:border-zinc-800 dark:bg-zinc-900/30">
             <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400">
               <ShoppingBag className="h-7 w-7" />
             </div>
@@ -339,11 +352,14 @@ export function App() {
               />
             ))}
 
-            {/* All Done Banner when only checked items remain */}
-            {pendingCount === 0 && checkedItems.length > 0 && (
-              <div className="mb-4 rounded-2xl bg-emerald-50 px-4 py-3 text-center text-sm font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                Tudo pego! Seus itens continuam salvos abaixo para a próxima compra.
-              </div>
+            {/* Celebratory Completion Summary Card when only checked items remain */}
+            {pendingCount === 0 && checkedItems.length > 0 && activeList && (
+              <ShoppingCompleteCard
+                listName={activeList.name}
+                checkedItems={checkedItems}
+                onRestartAll={() => void handleRestartList()}
+                onShowToast={(msg) => showToast(msg)}
+              />
             )}
 
             {/* Checked ("No carrinho / Já tenho") Permanent Section */}
@@ -359,6 +375,9 @@ export function App() {
           </>
         )}
       </main>
+
+      {/* PWA Update Available Prompt */}
+      <PwaUpdatePrompt />
 
       {/* Thumb-Zone Bottom Dock (Catalog Drawer + List Tabs + Qty Pills + Voice + Paste + Input) */}
       <QuickAddBar

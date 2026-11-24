@@ -181,7 +181,7 @@ export function QuickCatalogDrawer({
   if (!open) return null;
 
   return (
-    <div className="mb-2.5 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="animate-drawer-up mb-2.5 overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
       {/* Drawer Header */}
       <div className="flex items-center justify-between border-b border-zinc-200/80 px-3 py-2 dark:border-zinc-800">
         <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-200">

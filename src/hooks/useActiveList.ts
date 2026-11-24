@@ -52,6 +52,20 @@ export function useActiveList() {
       }
 
       const defaultId = await ensureDefaultLists();
+      const listShortcut = params.get('list');
+      if (
+        mounted &&
+        (listShortcut === 'mercado' || listShortcut === 'farmacia' || listShortcut === 'geral')
+      ) {
+        window.history.replaceState({}, '', window.location.pathname);
+        const match = await db.lists.filter((l) => l.type === listShortcut).first();
+        if (mounted && match) {
+          setLastActiveListId(match.id);
+          setActiveListIdState(match.id);
+          return;
+        }
+      }
+
       if (mounted) {
         setActiveListIdState(defaultId);
       }
