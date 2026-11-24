@@ -37,9 +37,44 @@ do $$
 begin
   if not exists (
     select 1 from pg_constraint
+     where conname = 'lists_name_length' and conrelid = 'public.lists'::regclass
+  ) then
+    alter table public.lists add constraint lists_name_length check (char_length(trim(name)) between 1 and 80);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'lists_share_code_length' and conrelid = 'public.lists'::regclass
+  ) then
+    alter table public.lists add constraint lists_share_code_length check (char_length(trim(share_code)) between 4 and 24);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
      where conname = 'list_items_quantity_positive' and conrelid = 'public.list_items'::regclass
   ) then
     alter table public.list_items add constraint list_items_quantity_positive check (quantity > 0);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'list_items_name_length' and conrelid = 'public.list_items'::regclass
+  ) then
+    alter table public.list_items add constraint list_items_name_length check (char_length(trim(name)) between 1 and 120);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'list_items_normalized_name_length' and conrelid = 'public.list_items'::regclass
+  ) then
+    alter table public.list_items add constraint list_items_normalized_name_length check (char_length(trim(normalized_name)) between 1 and 120);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'list_items_unit_length' and conrelid = 'public.list_items'::regclass
+  ) then
+    alter table public.list_items add constraint list_items_unit_length check (char_length(trim(unit)) between 1 and 20);
   end if;
 end;
 $$;
@@ -77,6 +112,9 @@ create table if not exists public.join_attempts (
 
 create index if not exists idx_join_attempts_user_time
   on public.join_attempts (user_id, attempted_at desc);
+
+create index if not exists idx_join_attempts_attempted_at
+  on public.join_attempts (attempted_at);
 
 -- 4. Triggers de integridade, timestamps autoritativos e proteção de colunas imutáveis
 
@@ -168,10 +206,14 @@ begin
     raise exception 'Authentication required' using errcode = '42501';
   end if;
 
-  -- Limpa registros com mais de 5 minutos deste usuário e verifica limite (10/min)
+  if p_share_code is null or char_length(trim(p_share_code)) < 4 or char_length(trim(p_share_code)) > 32 then
+    return;
+  end if;
+
+  -- Limpa registros expirados (deste usuário > 5 min e globais > 1 hora) para evitar crescimento ilimitado
   delete from public.join_attempts
-   where user_id = v_uid
-     and attempted_at < now() - interval '5 minutes';
+   where (user_id = v_uid and attempted_at < now() - interval '5 minutes')
+      or attempted_at < now() - interval '1 hour';
 
   select count(*)
     into v_recent_attempts
@@ -202,8 +244,6 @@ begin
   return next v_list;
 end;
 $$;
-
-grant execute on function public.join_list_by_share_code(text) to anon, authenticated;
 
 -- 6. Habilitar Realtime para sincronização instantânea entre dispositivos
 -- REPLICA IDENTITY FULL garante que eventos DELETE incluam filtros em lists e list_items
@@ -323,7 +363,7 @@ grant select, insert, update, delete on public.list_items to authenticated;
 revoke insert, update on public.list_members from authenticated;
 grant select, delete on public.list_members to authenticated;
 revoke all on public.join_attempts from authenticated;
-revoke execute on function public.is_list_member(uuid) from anon;
-revoke execute on function public.join_list_by_share_code(text) from anon;
+revoke execute on function public.is_list_member(uuid) from public, anon;
+revoke execute on function public.join_list_by_share_code(text) from public, anon;
 grant execute on function public.is_list_member(uuid) to authenticated;
 grant execute on function public.join_list_by_share_code(text) to authenticated;

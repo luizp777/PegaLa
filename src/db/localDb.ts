@@ -26,7 +26,8 @@ class PegaLaDB extends Dexie {
   pendingSync!: EntityTable<PendingSyncMutation, 'id'>;
 
   /**
-   * Inicializa o banco `PegaLaDB` e declara os índices das versões 1 e 2.
+   * Inicializa o banco `PegaLaDB` e declara os índices das versões 1, 2 e 3
+   * (incluindo migração da categoria legada `bebe_pet` para `bebe` e `pet`).
    */
   constructor() {
     super('PegaLaDB');
@@ -140,49 +141,59 @@ export function ensureDefaultLists(): Promise<string> {
 }
 
 /**
- * Executa a verificação e criação atômica das listas iniciais no IndexedDB.
+ * Executa a verificação e criação atômica das listas iniciais no IndexedDB,
+ * coordenando múltiplas abas via Web Locks API quando disponível.
  *
  * @returns UUID da lista ativa inicial.
  */
 async function runEnsureDefaultLists(): Promise<string> {
-  const existing = await db.lists.toArray();
-  if (existing.length > 0) {
-    const saved = getLastActiveListId();
-    if (saved && existing.some((l) => l.id === saved)) {
-      return saved;
-    }
-    setLastActiveListId(existing[0].id);
-    return existing[0].id;
+  const execute = async (): Promise<string> => {
+    const selectedId = await db.transaction('rw', db.lists, db.pendingSync, async () => {
+      const existing = await db.lists.toArray();
+      if (existing.length > 0) {
+        const saved = getLastActiveListId();
+        if (saved && existing.some((l) => l.id === saved)) {
+          return saved;
+        }
+        return existing[0].id;
+      }
+
+      const now = new Date().toISOString();
+      const mercado: ShoppingList = {
+        id: crypto.randomUUID(),
+        name: 'Mercado',
+        type: 'mercado',
+        shareCode: generateShareCode(),
+        ownerId: null,
+        isSynced: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const farmacia: ShoppingList = {
+        id: crypto.randomUUID(),
+        name: 'Farmácia',
+        type: 'farmacia',
+        shareCode: generateShareCode(),
+        ownerId: null,
+        isSynced: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await db.lists.bulkPut([mercado, farmacia]);
+      await enqueueSync('upsert_list', mercado.id, mercado.id, mercado as unknown as Record<string, unknown>);
+      await enqueueSync('upsert_list', farmacia.id, farmacia.id, farmacia as unknown as Record<string, unknown>);
+      return mercado.id;
+    });
+
+    setLastActiveListId(selectedId);
+    return selectedId;
+  };
+
+  if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+    return navigator.locks.request('pegala-ensure-defaults', () => execute());
   }
-
-  const now = new Date().toISOString();
-  const mercado: ShoppingList = {
-    id: crypto.randomUUID(),
-    name: 'Mercado',
-    type: 'mercado',
-    shareCode: generateShareCode(),
-    ownerId: null,
-    isSynced: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-  const farmacia: ShoppingList = {
-    id: crypto.randomUUID(),
-    name: 'Farmácia',
-    type: 'farmacia',
-    shareCode: generateShareCode(),
-    ownerId: null,
-    isSynced: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  await db.lists.bulkPut([mercado, farmacia]);
-  await enqueueSync('upsert_list', mercado.id, mercado.id, mercado as unknown as Record<string, unknown>);
-  await enqueueSync('upsert_list', farmacia.id, farmacia.id, farmacia as unknown as Record<string, unknown>);
-
-  setLastActiveListId(mercado.id);
-  return mercado.id;
+  return execute();
 }
 
 /**
@@ -259,15 +270,16 @@ export async function createList(name: string, type: ListType): Promise<Shopping
 export async function renameList(listId: string, newName: string): Promise<void> {
   const trimmed = newName.trim();
   if (!trimmed) return;
-  const existing = await db.lists.get(listId);
-  if (!existing || existing.name === trimmed) return;
 
-  const updated: ShoppingList = {
-    ...existing,
-    name: trimmed,
-    updatedAt: new Date().toISOString(),
-  };
   await db.transaction('rw', db.lists, db.pendingSync, async () => {
+    const existing = await db.lists.get(listId);
+    if (!existing || existing.name === trimmed) return;
+
+    const updated: ShoppingList = {
+      ...existing,
+      name: trimmed,
+      updatedAt: new Date().toISOString(),
+    };
     await db.lists.put(updated);
     await enqueueSync('upsert_list', updated.id, updated.id, updated as unknown as Record<string, unknown>);
   });
@@ -550,10 +562,11 @@ export async function decrementOrMarkChecked(item: ShoppingItem): Promise<'updat
 }
 
 /**
- * Define exatamente a quantidade e a unidade de um item (usado pelas pílulas rápidas).
+ * Define exatamente a quantidade e a unidade de um item (usado pelas pílulas rápidas),
+ * sanitizando valores inválidos (`quantity <= 0` ou `unit` vazio) antes de persistir.
  *
  * @param item - Item alvo da atualização.
- * @param quantity - Nova quantidade numérica.
+ * @param quantity - Nova quantidade numérica positiva.
  * @param unit - Nova unidade de medida.
  */
 export async function setItemExactQuantityAndUnit(
@@ -561,10 +574,13 @@ export async function setItemExactQuantityAndUnit(
   quantity: number,
   unit: string
 ): Promise<void> {
+  const safeQty =
+    Number.isFinite(quantity) && quantity > 0 ? Number(quantity.toFixed(2)) : item.quantity;
+  const safeUnit = unit.trim() || item.unit;
   const updated: ShoppingItem = {
     ...item,
-    quantity,
-    unit,
+    quantity: safeQty,
+    unit: safeUnit,
     updatedAt: new Date().toISOString(),
   };
   await db.transaction('rw', db.items, db.pendingSync, async () => {
@@ -643,11 +659,6 @@ export async function updateItemDetails(
 
     if (duplicate && duplicate.id !== item.id) {
       await db.items.delete(duplicate.id);
-      await db.pendingSync
-        .where('listId')
-        .equals(item.listId)
-        .filter((m) => m.entityId === duplicate.id && m.action === 'upsert_item')
-        .delete();
       await enqueueSync('delete_item', duplicate.id, item.listId, {
         id: duplicate.id,
         listId: item.listId,
@@ -680,11 +691,6 @@ export async function updateItemDetails(
 export async function deleteItem(item: ShoppingItem): Promise<void> {
   await db.transaction('rw', db.items, db.pendingSync, async () => {
     await db.items.delete(item.id);
-    await db.pendingSync
-      .where('listId')
-      .equals(item.listId)
-      .filter((m) => m.entityId === item.id && m.action === 'upsert_item')
-      .delete();
     await enqueueSync('delete_item', item.id, item.listId, { id: item.id, listId: item.listId });
   });
 }
@@ -697,16 +703,16 @@ export async function deleteItem(item: ShoppingItem): Promise<void> {
  * @returns Quantidade de itens devolvidos para a lista ativa.
  */
 export async function uncheckAllItems(listId: string): Promise<number> {
-  const checked = await db.items
-    .where('listId')
-    .equals(listId)
-    .filter((i) => i.isChecked)
-    .toArray();
+  return db.transaction('rw', db.items, db.pendingSync, async () => {
+    const checked = await db.items
+      .where('listId')
+      .equals(listId)
+      .filter((i) => i.isChecked)
+      .toArray();
 
-  if (checked.length === 0) return 0;
+    if (checked.length === 0) return 0;
 
-  const now = new Date().toISOString();
-  await db.transaction('rw', db.items, db.pendingSync, async () => {
+    const now = new Date().toISOString();
     for (const item of checked) {
       const updated: ShoppingItem = {
         ...item,
@@ -717,6 +723,6 @@ export async function uncheckAllItems(listId: string): Promise<number> {
       await db.items.put(updated);
       await enqueueSync('upsert_item', updated.id, listId, updated as unknown as Record<string, unknown>);
     }
+    return checked.length;
   });
-  return checked.length;
 }

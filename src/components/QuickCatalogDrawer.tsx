@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, Minus, Plus, Search, Sparkles, X, Zap } from 'lucide-react';
 import type { CategoryId, ListType, ShoppingItem, UserDictionaryEntry } from '../types';
-import { CATALOG_BY_CATEGORY, CATEGORIES, normalizeText } from '../lib/dictionaryPtBr';
+import { CATEGORIES, normalizeText } from '../lib/dictionaryPtBr';
+import { CATALOG_BY_CATEGORY } from '../lib/catalogPtBr';
 import { formatQuantity } from '../lib/itemParser';
 import { hapticLight } from '../lib/haptics';
 import { CategoryIcon, ItemIcon } from './ItemIcon';
@@ -72,8 +73,8 @@ const MARKET_FIRST_TABS: Exclude<CategoryId, 'outros'>[] = [
 ];
 
 /**
- * Painel expansível na zona do polegar com busca instantânea em 400+ itens,
- * abas por corredor e toque múltiplo acumulativo (`1x`, `2x`, `3x`...) sem abrir o teclado principal.
+ * Painel expansível na zona do polegar com busca instantânea em todo o catálogo,
+ * abas acessíveis por corredor e toque múltiplo acumulativo (`1x`, `2x`, `3x`...) sem abrir o teclado principal.
  *
  * @param props - Propriedades do drawer de catálogo rápido.
  * @returns Painel renderizado ou `null` quando fechado.
@@ -91,6 +92,15 @@ export function QuickCatalogDrawer({
 }: QuickCatalogDrawerProps) {
   const [activeTab, setActiveTab] = useState<CatalogTab>('recentes');
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
 
   const orderedCategoryTabs = useMemo(
     () => (listType === 'farmacia' ? PHARMACY_FIRST_TABS : MARKET_FIRST_TABS),
@@ -192,7 +202,7 @@ export function QuickCatalogDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-200/70 text-zinc-600 active:scale-95 dark:bg-zinc-800 dark:text-zinc-300"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-200/70 text-zinc-600 active:scale-95 dark:bg-zinc-800 dark:text-zinc-300"
           aria-label="Fechar catálogo rápido"
         >
           <X className="h-4 w-4" />
@@ -207,15 +217,15 @@ export function QuickCatalogDrawer({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar entre 370+ itens de mercado e farmácia..."
+            placeholder="Buscar no catálogo de mercado e farmácia..."
             aria-label="Buscar no catálogo"
-            className="h-10 w-full rounded-xl border border-zinc-200 bg-white pl-8 pr-8 text-base text-zinc-800 placeholder:text-zinc-500 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-400 sm:h-9 sm:text-xs"
+            className="h-10 w-full rounded-xl border border-zinc-200 bg-white pl-8 pr-9 text-base text-zinc-800 placeholder:text-zinc-500 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-400 sm:h-9 sm:text-xs"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-2 text-zinc-400 hover:text-zinc-600"
+              className="absolute right-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
               aria-label="Limpar busca do catálogo"
             >
               <X className="h-3.5 w-3.5" />
@@ -226,9 +236,15 @@ export function QuickCatalogDrawer({
 
       {/* Category Filter Tabs (hidden while actively filtering globally) */}
       {normalizeText(searchQuery).length < 2 && (
-        <div className="no-scrollbar flex gap-1.5 overflow-x-auto border-b border-zinc-200/70 px-2.5 py-2 dark:border-zinc-800/80">
+        <div
+          role="tablist"
+          aria-label="Corredores do catálogo"
+          className="no-scrollbar flex gap-1.5 overflow-x-auto border-b border-zinc-200/70 px-2.5 py-2 dark:border-zinc-800/80"
+        >
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === 'recentes'}
             onClick={() => {
               hapticLight();
               setActiveTab('recentes');
@@ -249,6 +265,8 @@ export function QuickCatalogDrawer({
               <button
                 key={catId}
                 type="button"
+                role="tab"
+                aria-selected={isSelected}
                 onClick={() => {
                   hapticLight();
                   setActiveTab(catId);

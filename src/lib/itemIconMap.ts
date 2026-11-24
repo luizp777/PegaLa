@@ -566,33 +566,58 @@ const VECTOR_ICON_RULES: Array<{ key: VectorIconKey; keywords: string[] }> = [
   { key: 'paw', keywords: ['antipulgas', 'simparic', 'bravecto', 'shampoo pet', 'pet'] },
 ];
 
+const EXACT_ICON_MAP = new Map<string, VectorIconKey>();
+for (const rule of VECTOR_ICON_RULES) {
+  for (const kw of rule.keywords) {
+    if (!EXACT_ICON_MAP.has(kw)) {
+      EXACT_ICON_MAP.set(kw, rule.key);
+    }
+  }
+}
+
+const ICON_RESOLUTION_CACHE = new Map<string, ResolvedItemIcon>();
+const MAX_ICON_CACHE_SIZE = 500;
+
 /**
  * Resolve o ícone vetorial minimalista de um produto (100% SVG, zero emojis):
- * 1) match por palavra inteira (priorizando a frase mais longa) em ~155 ícones vetoriais minimalistas;
- * 2) retorna `{ kind: 'monogram' }` apenas para itens personalizados desconhecidos digitados pelo usuário.
+ * 1) lookup O(1) exato + cache limitado para nomes compostos;
+ * 2) match por palavra inteira (priorizando a frase mais longa) em ~155 ícones vetoriais minimalistas;
+ * 3) retorna `{ kind: 'monogram' }` apenas para itens personalizados desconhecidos digitados pelo usuário.
  *
  * @param itemName - Nome do item (digitado ou do catálogo).
  * @returns Objeto {@link ResolvedItemIcon} pronto para renderização minimalista.
  */
 export function resolveItemIcon(itemName: string): ResolvedItemIcon {
   const norm = normalizeText(itemName);
-  if (norm) {
+  if (!norm) return { kind: 'monogram' };
+
+  const cached = ICON_RESOLUTION_CACHE.get(norm);
+  if (cached) return cached;
+
+  const exactKey = EXACT_ICON_MAP.get(norm);
+  let resolved: ResolvedItemIcon;
+  if (exactKey) {
+    resolved = { kind: 'svg', key: exactKey };
+  } else {
     let bestMatch: { len: number; key: VectorIconKey } | null = null;
     for (const rule of VECTOR_ICON_RULES) {
       for (const kw of rule.keywords) {
-        if (norm === kw) {
-          return { kind: 'svg', key: rule.key };
-        }
         if (hasWholePhrase(norm, kw) && (!bestMatch || kw.length > bestMatch.len)) {
           bestMatch = { len: kw.length, key: rule.key };
         }
       }
     }
-    if (bestMatch) {
-      return { kind: 'svg', key: bestMatch.key };
+    resolved = bestMatch ? { kind: 'svg', key: bestMatch.key } : { kind: 'monogram' };
+  }
+
+  if (ICON_RESOLUTION_CACHE.size >= MAX_ICON_CACHE_SIZE) {
+    const oldestKey = ICON_RESOLUTION_CACHE.keys().next().value;
+    if (oldestKey !== undefined) {
+      ICON_RESOLUTION_CACHE.delete(oldestKey);
     }
   }
-  return { kind: 'monogram' };
+  ICON_RESOLUTION_CACHE.set(norm, resolved);
+  return resolved;
 }
 
 /**

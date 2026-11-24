@@ -15,7 +15,8 @@ function computeIsDark(theme: ThemeMode): boolean {
 }
 
 /**
- * Hook React que gerencia a preferência de tema Claro/Escuro (incluindo detecção automática do sistema).
+ * Hook React que gerencia a preferência de tema Claro/Escuro (incluindo detecção automática do sistema)
+ * e sincroniza dinamicamente a meta tag `theme-color` com o tema efetivo.
  *
  * @returns Preferência configurada (`theme`), estado efetivo escuro (`isDark`) e função de alternância (`toggleTheme`).
  */
@@ -38,6 +39,10 @@ export function useTheme() {
     const applyTheme = () => {
       const isDark = computeIsDark(theme);
       root.classList.toggle('dark', isDark);
+      const themeMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeMeta) {
+        themeMeta.setAttribute('content', isDark ? '#09090b' : '#ffffff');
+      }
       setResolvedDark(isDark);
     };
 

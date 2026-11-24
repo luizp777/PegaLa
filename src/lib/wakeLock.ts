@@ -19,15 +19,21 @@ interface WakeLockSentinelLike {
  * @remarks
  * Reativa automaticamente o bloqueio caso o usuário alterne de aba e retorne ao aplicativo.
  *
+ * @param onError - Callback opcional chamado quando o sistema recusa o bloqueio de tela.
  * @returns Estado de suporte, estado ativo atual e função para alternar o bloqueio de tela.
  */
-export function useWakeLock() {
+export function useWakeLock(onError?: (message: string) => void) {
   const isSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
   const [isActive, setIsActive] = useState(false);
   const sentinelRef = useRef<WakeLockSentinelLike | null>(null);
   const desiredActiveRef = useRef(false);
+  const onErrorRef = useRef(onError);
 
-  const requestLock = useCallback(async () => {
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  const requestLock = useCallback(async (notifyOnFailure = false) => {
     if (!isSupported) return;
     try {
       const nav = navigator as Navigator & {
@@ -45,6 +51,9 @@ export function useWakeLock() {
       uiLogger.debug('Falha ao solicitar Wake Lock de tela', serializeError(err));
       desiredActiveRef.current = false;
       setIsActive(false);
+      if (notifyOnFailure) {
+        onErrorRef.current?.('Não foi possível manter a tela acesa neste aparelho.');
+      }
     }
   }, [isSupported]);
 
@@ -66,7 +75,7 @@ export function useWakeLock() {
       await releaseLock();
     } else {
       desiredActiveRef.current = true;
-      await requestLock();
+      await requestLock(true);
     }
   }, [releaseLock, requestLock]);
 

@@ -21,6 +21,12 @@ const NUMBER_WORDS_PT: Record<string, string> = {
 const MEIA_UNIT_REGEX =
   /^meia\s+(d[uú]zias?|caixas?|cxs?|bandejas?|bdjs?|quilos?|kilos?|kgs?|litros?|lts?|garrafas?|latas?|cartelas?|pacotes?|pcts?)\b/i;
 
+const COMPOUND_E_PHRASES: Array<{ regex: RegExp; placeholder: string; restore: string }> = [
+  { regex: /(?<!\p{L})vitamina\s+e(?!\p{L})/giu, placeholder: '__PEGA_VITAMINA_E__', restore: 'vitamina e' },
+  { regex: /(?<!\p{L})[aá]gua\s+e\s+sal(?!\p{L})/giu, placeholder: '__PEGA_AGUA_E_SAL__', restore: 'água e sal' },
+  { regex: /(?<!\p{L})coxa\s+e\s+sobrecoxa(?!\p{L})/giu, placeholder: '__PEGA_COXA_E_SOBRECOXA__', restore: 'coxa e sobrecoxa' },
+];
+
 /**
  * Converte frases faladas em português (números por extenso, expressões como `"um quilo e meio"` e conectivos)
  * em linhas separadas prontas para o {@link parseMultiLineInput}.
@@ -47,10 +53,21 @@ export function normalizeSpokenPortuguese(transcript: string): string {
     .replace(/\btrezentos\s+gramas(\s+de)?\b/gi, '300g')
     .replace(/\bquinhentos\s+gramas(\s+de)?\b/gi, '500g');
 
+  // Protect compound item names containing "e" before splitting multi-item phrases
+  for (const phrase of COMPOUND_E_PHRASES) {
+    text = text.replace(phrase.regex, phrase.placeholder);
+  }
+
   // Split multi-item spoken phrases on non-decimal commas, " e ", " mais ", or " também "
   const segments = text
     .split(/\s*(?:(?<!\d),(?!\d)|\be\b|\bmais\b|\btamb[eé]m\b)\s*/i)
-    .map((s) => s.trim())
+    .map((s) => {
+      let restored = s.trim();
+      for (const phrase of COMPOUND_E_PHRASES) {
+        restored = restored.replaceAll(phrase.placeholder, phrase.restore);
+      }
+      return restored;
+    })
     .filter(Boolean);
 
   const normalizedLines = segments.map((seg) => {
@@ -141,6 +158,15 @@ function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
     webkitSpeechRecognition?: SpeechRecognitionCtor;
   };
   return win.SpeechRecognition ?? win.webkitSpeechRecognition ?? null;
+}
+
+/**
+ * Indica se o navegador atual suporta reconhecimento de voz via Web Speech API.
+ *
+ * @returns `true` quando `SpeechRecognition` ou `webkitSpeechRecognition` está disponível.
+ */
+export function isSpeechRecognitionSupported(): boolean {
+  return getSpeechRecognitionCtor() !== null;
 }
 
 /**

@@ -9,10 +9,14 @@ import type { CategoryId, ShoppingItem } from '../types';
  * Hook principal de estado reativo da lista ativa, itens agrupados por corredor,
  * status de conectividade e sincronização em tempo real com o Supabase.
  *
+ * @remarks
+ * Também recria automaticamente as listas padrão caso todas as listas locais sejam removidas remotamente.
+ *
  * @returns Listas disponíveis, lista ativa, itens agrupados, itens no carrinho, sugestões frequentes e controles de seleção.
  */
 export function useActiveList() {
   const [activeListId, setActiveListIdState] = useState<string | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [isJoiningSharedList, setIsJoiningSharedList] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return Boolean(new URLSearchParams(window.location.search).get('join'));
@@ -33,18 +37,22 @@ export function useActiveList() {
         const res = await joinSharedListByCode(joinCode);
         if (!mounted) return;
 
-        window.history.replaceState({}, '', window.location.pathname);
-
         if (res.list) {
+          window.history.replaceState({}, '', window.location.pathname);
           await ensureDefaultLists();
           if (!mounted) return;
           setLastActiveListId(res.list.id);
           setActiveListIdState(res.list.id);
           setIsJoiningSharedList(false);
+          setHasInitialized(true);
           setJoinToast(`Lista "${res.list.name}" conectada!`);
           return;
         }
 
+        // Preserve ?join= on transient connection errors so a reload online can retry
+        if (res.error && !res.error.includes('conexão')) {
+          window.history.replaceState({}, '', window.location.pathname);
+        }
         setIsJoiningSharedList(false);
         if (res.error) {
           setJoinToast(res.error);
@@ -62,12 +70,14 @@ export function useActiveList() {
         if (mounted && match) {
           setLastActiveListId(match.id);
           setActiveListIdState(match.id);
+          setHasInitialized(true);
           return;
         }
       }
 
       if (mounted) {
         setActiveListIdState(defaultId);
+        setHasInitialized(true);
       }
     }
     void init();
@@ -94,6 +104,22 @@ export function useActiveList() {
   const listsQuery = useLiveQuery(() => db.lists.orderBy('createdAt').toArray(), []);
   const lists = useMemo(() => listsQuery ?? [], [listsQuery]);
 
+  // Recover automatically if the last remaining list is deleted remotely via Realtime/pull
+  useEffect(() => {
+    if (!hasInitialized || isJoiningSharedList || listsQuery === undefined || listsQuery.length > 0) {
+      return;
+    }
+    let cancelled = false;
+    void ensureDefaultLists().then((defaultId) => {
+      if (!cancelled) {
+        setActiveListIdState(defaultId);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasInitialized, isJoiningSharedList, listsQuery]);
+
   const activeList = useMemo(() => {
     if (isJoiningSharedList) return null;
     return lists.find((l) => l.id === activeListId) ?? lists[0] ?? null;
@@ -104,9 +130,13 @@ export function useActiveList() {
     if (activeListId && activeList.id !== activeListId) {
       setLastActiveListId(activeList.id);
     }
+  }, [activeList?.id, activeListId]);
+
+  useEffect(() => {
+    if (!activeList?.id) return;
     const unsubscribe = subscribeToListRealtime(activeList.id);
     return unsubscribe;
-  }, [activeList?.id, activeListId]);
+  }, [activeList?.id]);
 
   const itemsQuery = useLiveQuery(
     () => (activeList ? db.items.where('listId').equals(activeList.id).toArray() : []),

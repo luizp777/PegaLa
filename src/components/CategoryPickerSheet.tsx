@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
-import { Minus, Plus, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Minus, Plus, Trash2, X } from 'lucide-react';
 import type { CategoryId, ShoppingItem } from '../types';
 import { CATEGORIES } from '../lib/dictionaryPtBr';
 import { getMinQuantityForUnit, getQuantityStep } from '../db/localDb';
 import { formatQuantity } from '../lib/itemParser';
-import { hapticLight, hapticSuccess } from '../lib/haptics';
+import { hapticLight, hapticSuccess, hapticWarning } from '../lib/haptics';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import { CategoryIcon } from './ItemIcon';
 
 /**
@@ -18,6 +19,8 @@ interface CategoryPickerSheetProps {
     item: ShoppingItem,
     updates: { name: string; quantity: number; unit: string; categoryId: CategoryId }
   ) => void;
+  /** Callback opcional para excluir o item diretamente pelo sheet de edição (acessível no mobile). */
+  onDeleteItem?: (item: ShoppingItem) => void;
   /** Fecha o Bottom Sheet sem alterações. */
   onClose: () => void;
 }
@@ -25,8 +28,9 @@ interface CategoryPickerSheetProps {
 const QUICK_UNITS = ['un', 'kg', 'g', 'L', 'ml', 'cx', 'pct'] as const;
 
 /**
- * Bottom Sheet de edição completa do item (nome, quantidade, unidade e corredor),
- * permitindo reclassificar o corredor com 1 toque ou ajustar os detalhes do item.
+ * Bottom Sheet acessível (com focus trap e scroll-lock) para edição completa do item
+ * (nome, quantidade, unidade e corredor), envio via `Enter`, exclusão direta no mobile
+ * e reclassificação de corredor com 1 toque.
  *
  * @param props - Propriedades do painel de edição do item.
  * @returns Bottom Sheet renderizado ou `null` quando inativo.
@@ -34,6 +38,7 @@ const QUICK_UNITS = ['un', 'kg', 'g', 'L', 'ml', 'cx', 'pct'] as const;
 export function CategoryPickerSheet({
   item,
   onSaveItem,
+  onDeleteItem,
   onClose,
 }: CategoryPickerSheetProps) {
   const [name, setName] = useState(() => item?.name ?? '');
@@ -42,15 +47,9 @@ export function CategoryPickerSheet({
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>(
     () => item?.categoryId ?? 'outros'
   );
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!item) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [item, onClose]);
+  useModalAccessibility(Boolean(item), dialogRef, onClose);
 
   if (!item) return null;
 
@@ -85,10 +84,12 @@ export function CategoryPickerSheet({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={`Editar ${item.name}`}
-        className="animate-drawer-up w-full max-w-md rounded-t-3xl bg-white p-4 pb-safe shadow-2xl dark:bg-zinc-900 sm:rounded-3xl sm:p-5"
+        className="animate-drawer-up max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-4 pb-safe shadow-2xl focus:outline-none dark:bg-zinc-900 sm:rounded-3xl sm:p-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Drag handle visual cue */}
@@ -113,13 +114,20 @@ export function CategoryPickerSheet({
           </button>
         </div>
 
-        {/* Name + Quantity + Unit Controls */}
-        <div className="mb-3.5 space-y-2.5 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-950/60">
+        {/* Name + Quantity + Unit Controls (Enter submits) */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSave();
+          }}
+          className="mb-3.5 space-y-2.5 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-950/60"
+        >
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             aria-label="Nome do item"
+            enterKeyHint="done"
             className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-base font-medium text-zinc-900 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
           />
 
@@ -158,6 +166,7 @@ export function CategoryPickerSheet({
                     const min = getMinQuantityForUnit(u);
                     if (quantity < min) setQuantity(min);
                   }}
+                  aria-pressed={unit === u}
                   className={`h-8 shrink-0 rounded-lg px-2.5 text-xs font-bold transition active:scale-95 ${
                     unit === u
                       ? 'bg-emerald-600 text-white'
@@ -169,7 +178,7 @@ export function CategoryPickerSheet({
               ))}
             </div>
           </div>
-        </div>
+        </form>
 
         {/* Corridor Grid */}
         <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -201,15 +210,31 @@ export function CategoryPickerSheet({
           })}
         </div>
 
-        {hasTextOrQtyChanges && (
-          <button
-            type="button"
-            onClick={() => handleSave()}
-            className="mt-2 h-11 w-full rounded-2xl bg-emerald-600 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-500 active:scale-[0.99]"
-          >
-            Salvar alterações
-          </button>
-        )}
+        <div className="mt-2 flex items-center gap-2">
+          {onDeleteItem && (
+            <button
+              type="button"
+              onClick={() => {
+                hapticWarning();
+                onDeleteItem(item);
+                onClose();
+              }}
+              className="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-2xl border border-red-200 bg-red-50/70 px-3.5 text-xs font-bold text-red-600 transition hover:bg-red-100 active:scale-95 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/70"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>Excluir item</span>
+            </button>
+          )}
+          {hasTextOrQtyChanges && (
+            <button
+              type="button"
+              onClick={() => handleSave()}
+              className="h-11 flex-1 rounded-2xl bg-emerald-600 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-500 active:scale-[0.99]"
+            >
+              Salvar alterações
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

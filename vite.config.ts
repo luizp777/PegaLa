@@ -7,11 +7,21 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-supabase': ['@supabase/supabase-js'],
-          'vendor-db': ['dexie', 'dexie-react-hooks'],
-          'vendor-ui': ['lucide-react'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (/[/\\]node_modules[/\\](react|react-dom|scheduler)[/\\]/.test(id)) {
+            return 'vendor-react';
+          }
+          if (id.includes('@supabase/')) {
+            return 'vendor-supabase';
+          }
+          if (id.includes('dexie')) {
+            return 'vendor-db';
+          }
+          if (id.includes('lucide-react')) {
+            return 'vendor-ui';
+          }
+          return undefined;
         },
       },
     },
@@ -23,6 +33,7 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: [
         'favicon.svg',
+        'theme-init.js',
         'icons/icon-192.svg',
         'icons/icon-512.svg',
         'icons/maskable-icon.svg',

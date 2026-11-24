@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import { memo, type ComponentType } from 'react';
 import {
   Apple,
   Baby,
@@ -389,7 +389,7 @@ interface ItemIconProps {
  * @param props - Propriedades visuais do ícone do item.
  * @returns Ícone vetorial minimalista renderizado.
  */
-export function ItemIcon({
+export const ItemIcon = memo(function ItemIcon({
   name,
   categoryId,
   isChecked = false,
@@ -463,7 +463,7 @@ export function ItemIcon({
       )}
     </span>
   );
-}
+});
 
 /**
  * Propriedades do componente {@link CategoryIcon}.

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Check, Minus, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { ShoppingItem } from '../types';
 import { CATEGORY_MAP } from '../lib/dictionaryPtBr';
@@ -29,13 +29,18 @@ const SWIPE_THRESHOLD = 72;
 const MAX_SWIPE = 112;
 
 /**
- * Linha otimizada para touchscreen com gestos de swipe (direita = carrinho, esquerda = excluir),
- * stepper direto `- qtd +` e botão de troca rápida de corredor.
+ * Linha otimizada para touchscreen com gestos de swipe com feedback háptico no limiar
+ * (direita = carrinho, esquerda = excluir), stepper direto `- qtd +`, exibição de quantidade
+ * em itens marcados e botão de edição completa/troca de corredor.
+ *
+ * @remarks
+ * Utiliza refs síncronas para leitura confiável de deslocamento no `touchend` e limpeza segura
+ * da supressão de clique no `touchcancel`.
  *
  * @param props - Propriedades da linha de item.
  * @returns Elemento interativo do item na lista.
  */
-export function ShoppingItemRow({
+export const ShoppingItemRow = memo(function ShoppingItemRow({
   item,
   onToggle,
   onIncrement,
@@ -49,6 +54,9 @@ export function ShoppingItemRow({
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const swipeLockedRef = useRef<'horizontal' | 'vertical' | null>(null);
   const suppressClickRef = useRef(false);
+  const thresholdHitRef = useRef(false);
+  const offsetXRef = useRef(0);
+  const isSwipingRef = useRef(false);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0];
@@ -56,6 +64,9 @@ export function ShoppingItemRow({
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
     swipeLockedRef.current = null;
     suppressClickRef.current = false;
+    thresholdHitRef.current = false;
+    offsetXRef.current = 0;
+    isSwipingRef.current = false;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -73,30 +84,59 @@ export function ShoppingItemRow({
 
     if (swipeLockedRef.current === 'horizontal') {
       suppressClickRef.current = true;
+      isSwipingRef.current = true;
       setIsSwiping(true);
       const clamped = Math.max(-MAX_SWIPE, Math.min(MAX_SWIPE, dx));
+      const crossed = Math.abs(clamped) >= SWIPE_THRESHOLD;
+      if (crossed && !thresholdHitRef.current) {
+        thresholdHitRef.current = true;
+        hapticLight();
+      } else if (!crossed && thresholdHitRef.current) {
+        thresholdHitRef.current = false;
+      }
+      offsetXRef.current = clamped;
       setOffsetX(clamped);
     }
   };
 
-  const handleTouchEnd = () => {
-    if (isSwiping) {
-      if (offsetX >= SWIPE_THRESHOLD) {
-        hapticSuccess();
-        onToggle(item);
-      } else if (offsetX <= -SWIPE_THRESHOLD) {
-        hapticWarning();
-        onDelete(item);
-      }
-    }
+  const resetSwipeGesture = (clearClickImmediately: boolean) => {
+    offsetXRef.current = 0;
+    isSwipingRef.current = false;
     setOffsetX(0);
     setIsSwiping(false);
     touchStartRef.current = null;
     swipeLockedRef.current = null;
+    thresholdHitRef.current = false;
+    if (clearClickImmediately) {
+      suppressClickRef.current = false;
+    } else if (suppressClickRef.current) {
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (isSwipingRef.current) {
+      if (offsetXRef.current >= SWIPE_THRESHOLD) {
+        hapticSuccess();
+        onToggle(item);
+      } else if (offsetXRef.current <= -SWIPE_THRESHOLD) {
+        hapticWarning();
+        onDelete(item);
+      }
+    }
+    resetSwipeGesture(false);
+  };
+
+  const handleTouchCancel = () => {
+    resetSwipeGesture(true);
   };
 
   const showRightAction = offsetX > 10;
   const showLeftAction = offsetX < -10;
+  const rightArmed = offsetX >= SWIPE_THRESHOLD;
+  const leftArmed = offsetX <= -SWIPE_THRESHOLD;
   const atMin = isAtMinQuantity(item);
 
   return (
@@ -112,11 +152,11 @@ export function ShoppingItemRow({
         }`}
         aria-hidden="true"
       >
-        <div className={`flex items-center gap-1.5 text-xs font-bold ${showRightAction ? 'opacity-100' : 'opacity-0'}`}>
+        <div className={`flex items-center gap-1.5 text-xs font-bold transition-transform ${rightArmed ? 'scale-110' : ''} ${showRightAction ? 'opacity-100' : 'opacity-0'}`}>
           <Check className="h-5 w-5 stroke-[2.5]" />
           <span>{item.isChecked ? 'Voltar' : 'No carrinho'}</span>
         </div>
-        <div className={`flex items-center gap-1.5 text-xs font-bold ${showLeftAction ? 'opacity-100' : 'opacity-0'}`}>
+        <div className={`flex items-center gap-1.5 text-xs font-bold transition-transform ${leftArmed ? 'scale-110' : ''} ${showLeftAction ? 'opacity-100' : 'opacity-0'}`}>
           <span>Excluir</span>
           <Trash2 className="h-5 w-5" />
         </div>
@@ -127,7 +167,7 @@ export function ShoppingItemRow({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
         onClickCapture={(e) => {
           if (suppressClickRef.current) {
             e.stopPropagation();
@@ -148,6 +188,7 @@ export function ShoppingItemRow({
         {/* Big One-Handed Check Target with Minimalist Product Icon */}
         <button
           type="button"
+          aria-pressed={item.isChecked}
           onClick={() => {
             if (isSwiping) return;
             hapticSuccess();
@@ -236,19 +277,24 @@ export function ShoppingItemRow({
             </div>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => {
-              hapticWarning();
-              onDelete(item);
-            }}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-400 hover:bg-red-50 hover:text-red-500 active:scale-95 dark:hover:bg-red-950/40"
-            aria-label={`Remover ${item.name}`}
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <span className="rounded-lg bg-zinc-200/70 px-2 py-0.5 text-[11px] font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+              {formatQuantity(item.quantity, item.unit)}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                hapticWarning();
+                onDelete(item);
+              }}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-400 hover:bg-red-50 hover:text-red-500 active:scale-95 dark:hover:bg-red-950/40"
+              aria-label={`Remover ${item.name}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         )}
       </div>
     </div>
   );
-}
+});

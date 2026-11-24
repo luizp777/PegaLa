@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatQuantity, parseMultiLineInput, parseSingleItem } from '../itemParser';
-import { CATALOG_BY_CATEGORY, guessCategory } from '../dictionaryPtBr';
+import { guessCategory } from '../dictionaryPtBr';
+import { CATALOG_BY_CATEGORY } from '../catalogPtBr';
 import { generateShareCode, getMinQuantityForUnit, getQuantityStep } from '../../db/localDb';
 import { normalizeSpokenPortuguese } from '../speechParser';
 import { getItemMonogram, resolveItemIcon } from '../itemIconMap';
@@ -172,6 +173,16 @@ describe('speechParser', () => {
 
     const socks = parseMultiLineInput(normalizeSpokenPortuguese('meia branca'));
     expect(socks[0]).toMatchObject({ name: 'Meia branca', quantity: 1, unit: 'un' });
+  });
+
+  it('preserves compound product names containing "e" when splitting spoken phrases', () => {
+    const items = parseMultiLineInput(
+      normalizeSpokenPortuguese('vitamina e e água e sal mais coxa e sobrecoxa')
+    );
+    expect(items).toHaveLength(3);
+    expect(items[0]).toMatchObject({ name: 'Vitamina e', quantity: 1, unit: 'un' });
+    expect(items[1]).toMatchObject({ name: 'Água e sal', quantity: 1, unit: 'un' });
+    expect(items[2]).toMatchObject({ name: 'Coxa e sobrecoxa', quantity: 1, unit: 'un' });
   });
 });
 

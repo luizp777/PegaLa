@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { ListType } from '../types';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import { ListTypeIcon } from './ItemIcon';
 
 /**
@@ -30,15 +31,9 @@ const LIST_TYPES: Array<{ id: ListType; label: string }> = [
 export function CreateListModal({ open, onClose, onCreate }: CreateListModalProps) {
   const [name, setName] = useState('');
   const [type, setType] = useState<ListType>('mercado');
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
+  useModalAccessibility(open, dialogRef, onClose);
 
   if (!open) return null;
 
@@ -57,12 +52,16 @@ export function CreateListModal({ open, onClose, onCreate }: CreateListModalProp
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Nova Lista"
-        className="animate-drawer-up w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-zinc-900 sm:rounded-3xl"
+        className="animate-drawer-up max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 pb-safe shadow-2xl focus:outline-none dark:bg-zinc-900 sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700 sm:hidden" />
+
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">Nova Lista</h2>
           <button
@@ -77,10 +76,14 @@ export function CreateListModal({ open, onClose, onCreate }: CreateListModalProp
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+            <label
+              htmlFor="create-list-name-input"
+              className="mb-1.5 block text-xs font-semibold text-zinc-600 dark:text-zinc-400"
+            >
               Nome da lista
             </label>
             <input
+              id="create-list-name-input"
               type="text"
               autoFocus
               value={name}
@@ -91,14 +94,18 @@ export function CreateListModal({ open, onClose, onCreate }: CreateListModalProp
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+            <span
+              id="create-list-type-label"
+              className="mb-1.5 block text-xs font-semibold text-zinc-600 dark:text-zinc-400"
+            >
               Tipo
-            </label>
-            <div className="grid grid-cols-3 gap-2">
+            </span>
+            <div role="group" aria-labelledby="create-list-type-label" className="grid grid-cols-3 gap-2">
               {LIST_TYPES.map((t) => (
                 <button
                   key={t.id}
                   type="button"
+                  aria-pressed={type === t.id}
                   onClick={() => setType(t.id)}
                   className={`flex flex-col items-center gap-1.5 rounded-xl border py-3 text-xs font-semibold transition ${
                     type === t.id

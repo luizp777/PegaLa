@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { LayoutGrid, Loader2, Mic, RotateCcw, ShoppingBag } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardPaste, LayoutGrid, Loader2, Mic, RotateCcw, ShoppingBag } from 'lucide-react';
 import {
   addItemsFromText,
   createList,
@@ -16,11 +16,15 @@ import {
   uncheckAllItems,
   updateItemDetails,
 } from './db/localDb';
+import { flushPendingSync } from './db/syncEngine';
 import { useActiveList } from './hooks/useActiveList';
 import { usePwaInstall } from './hooks/usePwaInstall';
 import { useTheme } from './hooks/useTheme';
+import { normalizeText } from './lib/dictionaryPtBr';
+import { isSpeechRecognitionSupported } from './lib/speechParser';
 import { useWakeLock } from './lib/wakeLock';
 import { hapticLight } from './lib/haptics';
+import { ActiveListToolbar } from './components/ActiveListToolbar';
 import { Header } from './components/Header';
 import { CategoryGroup } from './components/CategoryGroup';
 import { CheckedSection } from './components/CheckedSection';
@@ -50,6 +54,33 @@ interface ToastState {
   undoItem?: ShoppingItem;
 }
 
+const COLLAPSED_PREFIX = 'pegala_collapsed_';
+
+function loadCollapsedCategories(listId: string | undefined): Set<CategoryId> {
+  if (!listId) return new Set();
+  try {
+    const raw = localStorage.getItem(`${COLLAPSED_PREFIX}${listId}`);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed as CategoryId[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedCategories(listId: string | undefined, collapsed: Set<CategoryId>): void {
+  if (!listId) return;
+  try {
+    if (collapsed.size === 0) {
+      localStorage.removeItem(`${COLLAPSED_PREFIX}${listId}`);
+    } else {
+      localStorage.setItem(`${COLLAPSED_PREFIX}${listId}`, JSON.stringify(Array.from(collapsed)));
+    }
+  } catch {
+    // Ignora erro de armazenamento
+  }
+}
+
 /**
  * Componente raiz do aplicativo **PegaLá**, orquestrando estado reativo da lista ativa,
  * agrupamento por corredor, seção "No carrinho", dock inferior touchscreen, modais e toasts com desfazer.
@@ -72,14 +103,31 @@ export function App() {
     clearJoinToast,
   } = useActiveList();
 
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const showToast = useCallback((message: string, undoItem?: ShoppingItem) => {
+    setToast({ message, undoItem });
+  }, []);
+
   const { isDark, toggleTheme } = useTheme();
   const pwaInstall = usePwaInstall();
-  const wakeLock = useWakeLock();
+  const wakeLock = useWakeLock((msg) => showToast(msg));
 
   const [shareOpen, setShareOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [categoryPickerItem, setCategoryPickerItem] = useState<ShoppingItem | null>(null);
-  const [toast, setToast] = useState<ToastState | null>(null);
+  const [listFilter, setListFilter] = useState<{
+    listId: string | undefined;
+    query: string;
+    category: CategoryId | 'all';
+  }>({ listId: undefined, query: '', category: 'all' });
+  const [collapsedState, setCollapsedState] = useState<{
+    listId: string | undefined;
+    set: Set<CategoryId>;
+  }>(() => ({
+    listId: activeList?.id,
+    set: loadCollapsedCategories(activeList?.id),
+  }));
+  const [isSyncing, setIsSyncing] = useState(false);
   const [showSwipeHint, setShowSwipeHint] = useState<boolean>(() => {
     try {
       return localStorage.getItem('pegala_swipe_hint_seen') !== '1';
@@ -99,9 +147,36 @@ export function App() {
     }
   };
 
-  const showToast = (message: string, undoItem?: ShoppingItem) => {
-    setToast({ message, undoItem });
-  };
+  const activeListId = activeList?.id;
+  const listSearchQuery = listFilter.listId === activeListId ? listFilter.query : '';
+  const rawSelectedCategory = listFilter.listId === activeListId ? listFilter.category : 'all';
+  const selectedCategory =
+    rawSelectedCategory !== 'all' &&
+    !groupedPending.some((g) => g.category.id === rawSelectedCategory)
+      ? 'all'
+      : rawSelectedCategory;
+
+  const collapsedCategories = useMemo(
+    () =>
+      collapsedState.listId === activeListId
+        ? collapsedState.set
+        : loadCollapsedCategories(activeListId),
+    [collapsedState, activeListId]
+  );
+
+  const setListSearchQuery = useCallback(
+    (query: string) => {
+      setListFilter({ listId: activeListId, query, category: selectedCategory });
+    },
+    [activeListId, selectedCategory]
+  );
+
+  const setSelectedCategory = useCallback(
+    (category: CategoryId | 'all') => {
+      setListFilter({ listId: activeListId, query: listSearchQuery, category });
+    },
+    [activeListId, listSearchQuery]
+  );
 
   const activeToast: ToastState | null = toast ?? (joinToast ? { message: joinToast } : null);
 
@@ -141,46 +216,138 @@ export function App() {
     [groupedPending]
   );
 
-  const handleAddText = async (rawText: string): Promise<ShoppingItem[]> => {
-    if (!activeList) return [];
-    const added = await addItemsFromText(activeList.id, rawText);
-    if (added.length > 0) {
-      lastAddedItemRef.current = added[added.length - 1];
+  const toolbarCategories = useMemo(
+    () => groupedPending.map((g) => ({ category: g.category, count: g.items.length })),
+    [groupedPending]
+  );
+
+  const filteredGroups = useMemo(() => {
+    const normQuery = normalizeText(listSearchQuery);
+    return groupedPending
+      .filter((g) => selectedCategory === 'all' || g.category.id === selectedCategory)
+      .map((g) => ({
+        category: g.category,
+        items: normQuery
+          ? g.items.filter((item) => item.normalizedName.includes(normQuery))
+          : g.items,
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [groupedPending, selectedCategory, listSearchQuery]);
+
+  const allCollapsed = useMemo(
+    () =>
+      groupedPending.length > 0 &&
+      groupedPending.every((g) => collapsedCategories.has(g.category.id)),
+    [groupedPending, collapsedCategories]
+  );
+
+  const handleToggleCategoryExpand = useCallback(
+    (categoryId: CategoryId) => {
+      setCollapsedState((prev) => {
+        const base =
+          prev.listId === activeListId ? prev.set : loadCollapsedCategories(activeListId);
+        const next = new Set(base);
+        if (next.has(categoryId)) next.delete(categoryId);
+        else next.add(categoryId);
+        saveCollapsedCategories(activeListId, next);
+        return { listId: activeListId, set: next };
+      });
+    },
+    [activeListId]
+  );
+
+  const handleToggleAllCollapsed = useCallback(() => {
+    hapticLight();
+    setCollapsedState((prev) => {
+      const base =
+        prev.listId === activeListId ? prev.set : loadCollapsedCategories(activeListId);
+      const shouldExpandAll =
+        groupedPending.length > 0 && groupedPending.every((g) => base.has(g.category.id));
+      const next = shouldExpandAll
+        ? new Set<CategoryId>()
+        : new Set(groupedPending.map((g) => g.category.id));
+      saveCollapsedCategories(activeListId, next);
+      return { listId: activeListId, set: next };
+    });
+  }, [activeListId, groupedPending]);
+
+  const handleForceSync = useCallback(async () => {
+    if (isSyncing) return;
+    hapticLight();
+    setIsSyncing(true);
+    try {
+      const ok = await flushPendingSync();
+      showToast(
+        ok
+          ? 'Sincronizado com a nuvem!'
+          : 'Algumas alterações ainda aguardam conexão.'
+      );
+    } finally {
+      setIsSyncing(false);
     }
-    if (added.length > 1) {
-      showToast(`${added.length} itens adicionados à lista!`);
-    }
-    return added;
-  };
+  }, [isSyncing, showToast]);
 
-  const handleApplyQuickQtyToLastItem = async (
-    quantity: number,
-    unit: string
-  ): Promise<boolean> => {
-    const last = lastAddedItemRef.current;
-    if (!last || !activeList || last.listId !== activeList.id) return false;
-    const current = uncheckedByNormalizedName.get(last.normalizedName);
-    if (!current) return false;
-    await setItemExactQuantityAndUnit(current, quantity, unit);
-    showToast(`${current.name} atualizado`);
-    return true;
-  };
+  const handleToggleItem = useCallback((item: ShoppingItem) => {
+    void toggleItemChecked(item);
+  }, []);
 
-  const handleRowDecrement = async (item: ShoppingItem) => {
-    await decrementItemQuantity(item);
-  };
+  const handleIncrementItem = useCallback((item: ShoppingItem) => {
+    void incrementItemQuantity(item);
+  }, []);
 
-  const handleCatalogDecrement = async (item: ShoppingItem) => {
-    const result = await decrementOrMarkChecked(item);
-    if (result === 'checked') {
-      showToast(`"${item.name}" movido para "Já tenho"`);
-    }
-  };
+  const handleOpenCategoryPicker = useCallback((item: ShoppingItem) => {
+    setCategoryPickerItem(item);
+  }, []);
 
-  const handleDelete = async (item: ShoppingItem) => {
-    await deleteItem(item);
-    showToast(`"${item.name}" removido`, item);
-  };
+  const handleAddText = useCallback(
+    async (rawText: string): Promise<ShoppingItem[]> => {
+      if (!activeList) return [];
+      const added = await addItemsFromText(activeList.id, rawText);
+      if (added.length > 0) {
+        lastAddedItemRef.current = added[added.length - 1];
+      }
+      if (added.length > 1) {
+        showToast(`${added.length} itens adicionados à lista!`);
+      }
+      return added;
+    },
+    [activeList, showToast]
+  );
+
+  const handleApplyQuickQtyToLastItem = useCallback(
+    async (quantity: number, unit: string): Promise<boolean> => {
+      const last = lastAddedItemRef.current;
+      if (!last || !activeList || last.listId !== activeList.id) return false;
+      const current = uncheckedByNormalizedName.get(last.normalizedName);
+      if (!current) return false;
+      await setItemExactQuantityAndUnit(current, quantity, unit);
+      showToast(`${current.name} atualizado`);
+      return true;
+    },
+    [activeList, uncheckedByNormalizedName, showToast]
+  );
+
+  const handleRowDecrement = useCallback((item: ShoppingItem) => {
+    void decrementItemQuantity(item);
+  }, []);
+
+  const handleCatalogDecrement = useCallback(
+    async (item: ShoppingItem) => {
+      const result = await decrementOrMarkChecked(item);
+      if (result === 'checked') {
+        showToast(`"${item.name}" movido para "Já tenho"`);
+      }
+    },
+    [showToast]
+  );
+
+  const handleDelete = useCallback(
+    async (item: ShoppingItem) => {
+      await deleteItem(item);
+      showToast(`"${item.name}" removido`, item);
+    },
+    [showToast]
+  );
 
   const handleUndoDelete = async () => {
     if (!toast?.undoItem) return;
@@ -262,6 +429,8 @@ export function App() {
         onToggleWakeLock={wakeLock.toggleWakeLock}
         isOnline={isOnline}
         pendingSyncCount={pendingSyncCount}
+        isSyncing={isSyncing}
+        onForceSync={() => void handleForceSync()}
       />
 
       {/* Toast Notification with Optional Undo Action */}
@@ -269,9 +438,9 @@ export function App() {
         <div
           role="status"
           aria-live="polite"
-          className="animate-toast-in fixed inset-x-0 top-16 z-40 flex justify-center px-4"
+          className="animate-toast-in pointer-events-none fixed inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-40 flex justify-center px-4"
         >
-          <div className="flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl dark:bg-zinc-800 dark:ring-1 dark:ring-zinc-700">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl dark:bg-zinc-800 dark:ring-1 dark:ring-zinc-700">
             <span>{activeToast.message}</span>
             {activeToast.undoItem && (
               <button
@@ -310,7 +479,25 @@ export function App() {
               Conectando e carregando os itens em tempo real.
             </p>
           </div>
-        ) : isLoadingList ? null : pendingCount === 0 && checkedItems.length === 0 ? (
+        ) : isLoadingList ? (
+          <div className="space-y-3" aria-label="Carregando lista...">
+            {[0, 1, 2].map((skeletonIdx) => (
+              <div
+                key={skeletonIdx}
+                className="overflow-hidden rounded-2xl border border-zinc-200/80 bg-white dark:border-zinc-800 dark:bg-zinc-900/70"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50/70 px-3.5 py-2.5 dark:border-zinc-800/80 dark:bg-zinc-900">
+                  <div className="h-3.5 w-28 animate-pulse rounded-md bg-zinc-200 dark:bg-zinc-800" />
+                  <div className="h-4 w-6 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                </div>
+                <div className="space-y-2 p-3">
+                  <div className="h-10 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800/60" />
+                  <div className="h-10 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800/60" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : pendingCount === 0 && checkedItems.length === 0 ? (
           <div className="animate-fade-slide-up mt-8 flex flex-col items-center justify-center rounded-3xl border border-dashed border-zinc-300 bg-white/70 px-6 py-10 text-center dark:border-zinc-800 dark:bg-zinc-900/30">
             <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400">
               <ShoppingBag className="h-7 w-7" />
@@ -330,14 +517,25 @@ export function App() {
                 <LayoutGrid className="h-3.5 w-3.5 text-emerald-500" />
                 Toque no Catálogo Rápido
               </button>
-              <button
-                type="button"
-                onClick={() => quickAddBarRef.current?.triggerVoice()}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-zinc-100 px-3.5 py-2 ring-1 ring-zinc-200/80 transition hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-500/40 active:scale-95 dark:bg-zinc-800 dark:ring-zinc-700/80 dark:hover:bg-emerald-950/60 dark:hover:text-emerald-300"
-              >
-                <Mic className="h-3.5 w-3.5 text-emerald-500" />
-                Fale os itens no microfone
-              </button>
+              {isSpeechRecognitionSupported() ? (
+                <button
+                  type="button"
+                  onClick={() => quickAddBarRef.current?.triggerVoice()}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-zinc-100 px-3.5 py-2 ring-1 ring-zinc-200/80 transition hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-500/40 active:scale-95 dark:bg-zinc-800 dark:ring-zinc-700/80 dark:hover:bg-emerald-950/60 dark:hover:text-emerald-300"
+                >
+                  <Mic className="h-3.5 w-3.5 text-emerald-500" />
+                  Fale os itens no microfone
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => quickAddBarRef.current?.triggerPaste()}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-zinc-100 px-3.5 py-2 ring-1 ring-zinc-200/80 transition hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-500/40 active:scale-95 dark:bg-zinc-800 dark:ring-zinc-700/80 dark:hover:bg-emerald-950/60 dark:hover:text-emerald-300"
+                >
+                  <ClipboardPaste className="h-3.5 w-3.5 text-emerald-500" />
+                  Colar lista do WhatsApp
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -349,26 +547,50 @@ export function App() {
                 <button
                   type="button"
                   onClick={dismissSwipeHint}
-                  className="shrink-0 rounded-lg bg-emerald-600/15 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300"
+                  className="min-h-[36px] shrink-0 rounded-lg bg-emerald-600/15 px-3 py-1 text-xs font-bold text-emerald-800 dark:text-emerald-300"
                 >
                   OK
                 </button>
               </div>
             )}
 
+            {/* Quick Search + Aisle Pills + Collapse All Toolbar */}
+            <ActiveListToolbar
+              pendingCount={pendingCount}
+              categories={toolbarCategories}
+              searchQuery={listSearchQuery}
+              onSearchChange={setListSearchQuery}
+              selectedCategory={selectedCategory}
+              onSelectCategory={setSelectedCategory}
+              allCollapsed={allCollapsed}
+              onToggleAllCollapsed={handleToggleAllCollapsed}
+            />
+
             {/* Pending Items Grouped by Aisle / Category */}
-            {groupedPending.map(({ category, items }) => (
-              <CategoryGroup
-                key={category.id}
-                category={category}
-                items={items}
-                onToggle={(item) => void toggleItemChecked(item)}
-                onIncrement={(item) => void incrementItemQuantity(item)}
-                onDecrement={(item) => void handleRowDecrement(item)}
-                onOpenCategoryPicker={(item) => setCategoryPickerItem(item)}
-                onDelete={(item) => void handleDelete(item)}
-              />
-            ))}
+            {filteredGroups.length === 0 && pendingCount > 0 ? (
+              <div className="mb-4 rounded-2xl border border-dashed border-zinc-300 bg-white/70 px-4 py-6 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400">
+                Nenhum item pendente corresponde ao filtro atual.
+              </div>
+            ) : (
+              filteredGroups.map(({ category, items }) => {
+                const forceExpanded =
+                  Boolean(listSearchQuery.trim()) || selectedCategory !== 'all';
+                return (
+                  <CategoryGroup
+                    key={category.id}
+                    category={category}
+                    items={items}
+                    expanded={forceExpanded ? true : !collapsedCategories.has(category.id)}
+                    onToggleExpand={handleToggleCategoryExpand}
+                    onToggle={handleToggleItem}
+                    onIncrement={handleIncrementItem}
+                    onDecrement={handleRowDecrement}
+                    onOpenCategoryPicker={handleOpenCategoryPicker}
+                    onDelete={handleDelete}
+                  />
+                );
+              })
+            )}
 
             {/* Celebratory Completion Summary Card when only checked items remain */}
             {pendingCount === 0 && checkedItems.length > 0 && activeList && (
@@ -382,12 +604,13 @@ export function App() {
 
             {/* Checked ("No carrinho / Já tenho") Permanent Section */}
             <CheckedSection
+              key={activeList?.id ?? 'no-list'}
               items={checkedItems}
-              onToggle={(item) => void toggleItemChecked(item)}
-              onIncrement={(item) => void incrementItemQuantity(item)}
-              onDecrement={(item) => void handleRowDecrement(item)}
-              onOpenCategoryPicker={(item) => setCategoryPickerItem(item)}
-              onDelete={(item) => void handleDelete(item)}
+              onToggle={handleToggleItem}
+              onIncrement={handleIncrementItem}
+              onDecrement={handleRowDecrement}
+              onOpenCategoryPicker={handleOpenCategoryPicker}
+              onDelete={handleDelete}
               onRestartAll={() => void handleRestartList()}
             />
           </>
@@ -405,8 +628,8 @@ export function App() {
         onSelectList={selectList}
         onOpenCreateList={() => setCreateOpen(true)}
         onAddText={handleAddText}
-        onIncrementItem={(item) => void incrementItemQuantity(item)}
-        onDecrementItem={(item) => void handleCatalogDecrement(item)}
+        onIncrementItem={handleIncrementItem}
+        onDecrementItem={handleCatalogDecrement}
         onApplyQuickQtyToLastItem={handleApplyQuickQtyToLastItem}
         userHistory={frequentSuggestions}
         uncheckedByNormalizedName={uncheckedByNormalizedName}
@@ -421,6 +644,7 @@ export function App() {
             key={categoryPickerItem.id}
             item={categoryPickerItem}
             onSaveItem={(item, updates) => void handleSaveItemDetails(item, updates)}
+            onDeleteItem={(item) => void handleDelete(item)}
             onClose={() => setCategoryPickerItem(null)}
           />
         )}

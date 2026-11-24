@@ -7,6 +7,7 @@ import {
   Moon,
   Pencil,
   Plus,
+  RefreshCw,
   Share2,
   Sun,
   Trash2,
@@ -58,11 +59,19 @@ interface HeaderProps {
   isOnline: boolean;
   /** Quantidade de mutações locais pendentes de envio ao Supabase. */
   pendingSyncCount: number;
+  /** Indica se há sincronização manual em andamento. */
+  isSyncing?: boolean;
+  /** Callback acionado ao tocar no botão de sincronização manual. */
+  onForceSync?: () => void;
 }
 
 /**
  * Cabeçalho fixo do aplicativo com seletor de listas vetorial, resumo e barra de progresso da compra,
  * status de sincronização, botão de tela acesa (Wake Lock), compartilhamento e alternância de tema.
+ *
+ * @remarks
+ * Aguarda a hidratação da sessão antes de liberar ações destrutivas em listas compartilhadas,
+ * restaura o foco no botão acionador ao fechar o menu via `Escape` e aplica `role="menuitem"` nas ações.
  *
  * @param props - Propriedades de controle do cabeçalho.
  * @returns Elemento `<header>` renderizado.
@@ -85,26 +94,39 @@ export function Header({
   onToggleWakeLock,
   isOnline,
   pendingSyncCount,
+  isSyncing = false,
+  onForceSync,
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState<boolean>(() => !supabase);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
-    void supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) {
-        setCurrentUserId(data.session?.user?.id ?? null);
-      }
-    });
+    void supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!cancelled) {
+          setCurrentUserId(data.session?.user?.id ?? null);
+          setSessionLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSessionLoaded(true);
+        }
+      });
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setCurrentUserId(session?.user?.id ?? null);
+      setSessionLoaded(true);
     });
     return () => {
       cancelled = true;
@@ -113,6 +135,7 @@ export function Header({
   }, []);
 
   useEffect(() => {
+    if (!menuOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
@@ -125,6 +148,7 @@ export function Header({
         setMenuOpen(false);
         setConfirmDeleteId(null);
         setEditingListId(null);
+        triggerButtonRef.current?.focus();
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -133,17 +157,18 @@ export function Header({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
+  }, [menuOpen]);
 
   const totalCount = pendingCount + checkedCount;
   const progressPercent = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0;
 
   return (
-    <header className="sticky top-0 z-30 border-b border-zinc-200/80 bg-white/90 backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-950/90">
+    <header className="sticky top-0 z-30 border-b border-zinc-200/80 bg-white/90 pt-safe backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-950/90">
       <div className="mx-auto flex max-w-2xl items-center justify-between gap-2 px-3 py-2 sm:px-4">
         {/* Left: List Switcher */}
         <div className="relative min-w-0 flex-1" ref={menuRef}>
           <button
+            ref={triggerButtonRef}
             type="button"
             onClick={() => {
               setMenuOpen((o) => !o);
@@ -231,7 +256,11 @@ export function Header({
           </button>
 
           {menuOpen && (
-            <div className="animate-fade-slide-up absolute left-0 top-full mt-1.5 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+            <div
+              role="menu"
+              aria-label="Suas Listas"
+              className="animate-fade-slide-up absolute left-0 top-full mt-1.5 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+            >
               <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                 Suas Listas
               </div>
@@ -286,11 +315,12 @@ export function Header({
                         <>
                           <button
                             type="button"
+                            role="menuitem"
                             onClick={() => {
                               onSelectList(list.id);
                               setMenuOpen(false);
                             }}
-                            className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                            className="flex min-h-[38px] min-w-0 flex-1 items-center gap-2.5 text-left"
                           >
                             <ListTypeIcon
                               type={list.type}
@@ -325,15 +355,20 @@ export function Header({
                                 setEditingName(list.name);
                                 setConfirmDeleteId(null);
                               }}
-                              className="rounded-lg p-1.5 text-zinc-400 opacity-70 hover:bg-zinc-200/60 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                              className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-200/60 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                               aria-label={`Renomear ${list.name}`}
                               title="Renomear lista"
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                             {lists.length > 1 && (() => {
+                              const awaitingSession = Boolean(
+                                isSupabaseConfigured && list.isShared && list.ownerId && !sessionLoaded
+                              );
                               const isGuest = Boolean(
-                                list.isShared && list.ownerId && currentUserId && list.ownerId !== currentUserId
+                                list.isShared &&
+                                  list.ownerId &&
+                                  (!currentUserId || list.ownerId !== currentUserId)
                               );
                               const confirmLabel = isGuest
                                 ? 'Sair?'
@@ -341,37 +376,65 @@ export function Header({
                                   ? 'Apagar p/ todos?'
                                   : 'Confirmar?';
                               return confirmDeleteId === list.id ? (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (isGuest) {
-                                      onLeaveList(list.id);
-                                    } else {
-                                      onDeleteList(list.id);
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={awaitingSession}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (awaitingSession) return;
+                                      if (isGuest) {
+                                        onLeaveList(list.id);
+                                      } else {
+                                        onDeleteList(list.id);
+                                      }
+                                      setConfirmDeleteId(null);
+                                      setMenuOpen(false);
+                                    }}
+                                    className="h-8 shrink-0 rounded-lg bg-red-600 px-2 text-[11px] font-bold text-white transition hover:bg-red-500 active:scale-95 disabled:opacity-40"
+                                    aria-label={
+                                      isGuest
+                                        ? `Confirmar saída de ${list.name}`
+                                        : `Confirmar exclusão de ${list.name}`
                                     }
-                                    setConfirmDeleteId(null);
-                                    setMenuOpen(false);
-                                  }}
-                                  className="ml-0.5 shrink-0 rounded-lg bg-red-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-red-500 active:scale-95"
-                                  aria-label={
-                                    isGuest
-                                      ? `Confirmar saída de ${list.name}`
-                                      : `Confirmar exclusão de ${list.name}`
-                                  }
-                                >
-                                  {confirmLabel}
-                                </button>
+                                  >
+                                    {confirmLabel}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setConfirmDeleteId(null);
+                                    }}
+                                    className="h-8 shrink-0 rounded-lg bg-zinc-200/80 px-2 text-[11px] font-semibold text-zinc-700 transition hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-200"
+                                    aria-label="Cancelar"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
                               ) : (
                                 <button
                                   type="button"
+                                  disabled={awaitingSession}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setConfirmDeleteId(list.id);
                                   }}
-                                  className="rounded-lg p-1.5 text-zinc-400 opacity-70 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                                  aria-label={isGuest ? `Sair de ${list.name}` : `Excluir ${list.name}`}
-                                  title={isGuest ? 'Sair desta lista compartilhada' : 'Excluir lista'}
+                                  className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                                  aria-label={
+                                    awaitingSession
+                                      ? `Verificando permissões de ${list.name}`
+                                      : isGuest
+                                        ? `Sair de ${list.name}`
+                                        : `Excluir ${list.name}`
+                                  }
+                                  title={
+                                    awaitingSession
+                                      ? 'Verificando permissões...'
+                                      : isGuest
+                                        ? 'Sair desta lista compartilhada'
+                                        : 'Excluir lista'
+                                  }
                                 >
                                   {isGuest ? <LogOut className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
                                 </button>
@@ -387,6 +450,7 @@ export function Header({
               <div className="mt-1 border-t border-zinc-200 pt-1 dark:border-zinc-800">
                 <button
                   type="button"
+                  role="menuitem"
                   onClick={() => {
                     setMenuOpen(false);
                     onOpenCreateList();
@@ -403,10 +467,25 @@ export function Header({
 
         {/* Right: Quick Action Controls */}
         <div className="flex shrink-0 items-center gap-1">
+          {isSupabaseConfigured && isOnline && pendingSyncCount > 0 && onForceSync && (
+            <button
+              type="button"
+              onClick={onForceSync}
+              disabled={isSyncing}
+              title="Sincronizar alterações pendentes agora"
+              aria-label="Sincronizar alterações pendentes agora"
+              className="flex h-10 items-center gap-1 rounded-xl bg-emerald-500/12 px-2.5 text-xs font-bold text-emerald-700 transition hover:bg-emerald-500/20 active:scale-95 disabled:opacity-60 dark:text-emerald-300"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{pendingSyncCount}</span>
+            </button>
+          )}
+
           {wakeLockSupported && (
             <button
               type="button"
               onClick={onToggleWakeLock}
+              aria-pressed={wakeLockActive}
               title={wakeLockActive ? 'Tela mantida acesa (toque para desligar)' : 'Manter tela acesa durante a compra'}
               aria-label="Manter tela acesa"
               className={`flex h-10 items-center gap-1 rounded-xl px-2.5 text-xs font-semibold transition active:scale-95 ${

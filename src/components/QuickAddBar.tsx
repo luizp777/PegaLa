@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import {
   Check,
   ClipboardPaste,
@@ -29,6 +29,8 @@ export interface QuickAddBarHandle {
   openCatalog: () => void;
   /** Inicia ou alterna a captura de itens por voz (com feedback caso o navegador não suporte). */
   triggerVoice: () => void;
+  /** Aciona a colagem de lista da área de transferência com 1 toque. */
+  triggerPaste: () => void;
 }
 
 /**
@@ -122,6 +124,35 @@ export function QuickAddBar({
 
   const { isSupported: isVoiceSupported, toggleListening: toggleVoice } = voice;
 
+  const handleOneTapPaste = useCallback(async () => {
+    hapticLight();
+    try {
+      if (!navigator.clipboard?.readText) {
+        onShowToast('Segure no campo de texto e toque em "Colar"');
+        inputRef.current?.focus();
+        return;
+      }
+      const clipText = (await navigator.clipboard.readText()).trim();
+      if (!clipText) {
+        onShowToast('Área de transferência vazia');
+        return;
+      }
+      const added = await onAddText(clipText);
+      if (added.length > 0) {
+        hapticSuccess();
+        onShowToast(
+          added.length === 1
+            ? `"${added[0].name}" colado!`
+            : `${added.length} itens colados da lista!`
+        );
+      }
+    } catch (err) {
+      uiLogger.debug('Falha ao ler área de transferência', serializeError(err));
+      onShowToast('Permita acesso à área de transferência ou cole no campo');
+      inputRef.current?.focus();
+    }
+  }, [onAddText, onShowToast]);
+
   useImperativeHandle(
     barRef,
     () => ({
@@ -140,8 +171,11 @@ export function QuickAddBar({
         setCatalogOpen(false);
         toggleVoice();
       },
+      triggerPaste: () => {
+        void handleOneTapPaste();
+      },
     }),
-    [isVoiceSupported, toggleVoice, onShowToast]
+    [isVoiceSupported, toggleVoice, onShowToast, handleOneTapPaste]
   );
 
   useEffect(() => {
@@ -149,6 +183,19 @@ export function QuickAddBar({
       if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
     };
   }, []);
+
+  const duplicateListNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const list of lists) {
+      const norm = normalizeText(list.name);
+      counts.set(norm, (counts.get(norm) ?? 0) + 1);
+    }
+    const dups = new Set<string>();
+    for (const [norm, count] of counts.entries()) {
+      if (count > 1) dups.add(norm);
+    }
+    return dups;
+  }, [lists]);
 
   const suggestions = useMemo(() => {
     const norm = normalizeText(value);
@@ -236,35 +283,6 @@ export function QuickAddBar({
     inputRef.current?.focus();
   };
 
-  const handleOneTapPaste = async () => {
-    hapticLight();
-    try {
-      if (!navigator.clipboard?.readText) {
-        onShowToast('Segure no campo de texto e toque em "Colar"');
-        inputRef.current?.focus();
-        return;
-      }
-      const clipText = (await navigator.clipboard.readText()).trim();
-      if (!clipText) {
-        onShowToast('Área de transferência vazia');
-        return;
-      }
-      const added = await onAddText(clipText);
-      if (added.length > 0) {
-        hapticSuccess();
-        onShowToast(
-          added.length === 1
-            ? `"${added[0].name}" colado!`
-            : `${added.length} itens colados da lista!`
-        );
-      }
-    } catch (err) {
-      uiLogger.debug('Falha ao ler área de transferência', serializeError(err));
-      onShowToast('Permita acesso à área de transferência ou cole no campo');
-      inputRef.current?.focus();
-    }
-  };
-
   const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pasted = e.clipboardData.getData('text');
     if (pasted && (/[\r\n]/.test(pasted) || pasted.includes(';'))) {
@@ -305,7 +323,11 @@ export function QuickAddBar({
 
         {/* Voice Listening Indicator */}
         {voice.isListening && (
-          <div className="mb-2 flex items-center justify-between rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200 dark:bg-red-950/60 dark:text-red-300 dark:ring-red-900">
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-2 flex items-center justify-between rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 ring-1 ring-red-200 dark:bg-red-950/60 dark:text-red-300 dark:ring-red-900"
+          >
             <span className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
               {voice.interimText ? `"${voice.interimText}"` : 'Ouvindo... fale ex: "2 leites e 1 caixa de dipirona"'}
@@ -374,14 +396,13 @@ export function QuickAddBar({
           <div className="no-scrollbar mb-2 flex items-center gap-1.5 overflow-x-auto pb-0.5">
             {lists.map((list) => {
               const isCurrent = list.id === activeList?.id;
-              const normName = normalizeText(list.name);
-              const hasDuplicateName =
-                lists.filter((other) => normalizeText(other.name) === normName).length > 1;
+              const hasDuplicateName = duplicateListNames.has(normalizeText(list.name));
               const shortCode = list.shareCode.replace(/^PEGA-/, '').slice(-4);
               return (
                 <button
                   key={list.id}
                   type="button"
+                  aria-pressed={isCurrent}
                   onClick={() => {
                     hapticLight();
                     onSelectList(list.id);
@@ -450,6 +471,7 @@ export function QuickAddBar({
           {/* Toggle Quick Catalog Drawer */}
           <button
             type="button"
+            aria-expanded={catalogOpen}
             onClick={() => {
               hapticLight();
               setCatalogOpen((o) => !o);

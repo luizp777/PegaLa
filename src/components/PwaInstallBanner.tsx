@@ -34,7 +34,7 @@ export function PwaInstallBanner({
           <div className="truncate font-bold text-zinc-900 dark:text-zinc-100">
             Instale o PegaLá na tela inicial
           </div>
-          <div className="truncate text-[11px] text-zinc-600 dark:text-zinc-400">
+          <div className="line-clamp-2 text-[11px] leading-snug text-zinc-600 dark:text-zinc-400">
             {isIosManualInstall
               ? 'Toque em Compartilhar e depois em "Adicionar à Tela de Início"'
               : 'Acesso instantâneo no mercado, mesmo sem internet'}
@@ -47,7 +47,7 @@ export function PwaInstallBanner({
           <button
             type="button"
             onClick={onInstall}
-            className="h-8 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-2xs transition hover:bg-emerald-500 active:scale-95"
+            className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-2xs transition hover:bg-emerald-500 active:scale-95"
           >
             Instalar
           </button>
@@ -55,7 +55,7 @@ export function PwaInstallBanner({
         <button
           type="button"
           onClick={onDismiss}
-          className="flex h-8 w-8 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-emerald-500/10 hover:text-zinc-600 dark:hover:text-zinc-200"
+          className="flex h-9 w-9 items-center justify-center rounded-xl text-zinc-600 transition hover:bg-emerald-500/10 hover:text-zinc-800 dark:text-zinc-300 dark:hover:text-zinc-100"
           aria-label="Dispensar convite de instalação por 7 dias"
           title="Fechar por 7 dias"
         >

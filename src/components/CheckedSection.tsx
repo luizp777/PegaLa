@@ -26,9 +26,11 @@ interface CheckedSectionProps {
   onRestartAll: () => void;
 }
 
+const VIEW_MODE_KEY = 'pegala_checked_view';
+
 /**
  * Seção permanente e recolhível "No carrinho / Já tenho" exibida ao final da lista.
- * Oferece alternância entre modo Lista e Grade compacta de reativação, além de filtro rápido
+ * Oferece alternância persistida entre modo Lista e Grade compacta de reativação, além de filtro rápido
  * quando a casa acumula 8 ou mais itens salvos.
  *
  * @param props - Propriedades da seção de itens comprados/em casa.
@@ -44,8 +46,26 @@ export function CheckedSection({
   onRestartAll,
 }: CheckedSectionProps) {
   const [expanded, setExpanded] = useState(true);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
+    try {
+      return localStorage.getItem(VIEW_MODE_KEY) === 'grid' ? 'grid' : 'list';
+    } catch {
+      return 'list';
+    }
+  });
   const [filterText, setFilterText] = useState('');
+
+  const handleToggleViewMode = () => {
+    setViewMode((prev) => {
+      const next = prev === 'list' ? 'grid' : 'list';
+      try {
+        localStorage.setItem(VIEW_MODE_KEY, next);
+      } catch {
+        // Ignora erro de armazenamento
+      }
+      return next;
+    });
+  };
 
   const filteredItems = useMemo(() => {
     const query = normalizeText(filterText);
@@ -61,7 +81,8 @@ export function CheckedSection({
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex min-w-0 items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
+          aria-expanded={expanded}
+          className="flex min-h-[36px] min-w-0 items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400"
         >
           <ShoppingCart className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <span className="truncate">No carrinho / Já tenho ({items.length})</span>
@@ -74,8 +95,8 @@ export function CheckedSection({
           {expanded && (
             <button
               type="button"
-              onClick={() => setViewMode((m) => (m === 'list' ? 'grid' : 'list'))}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-200/70 active:scale-95 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              onClick={handleToggleViewMode}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-200/70 active:scale-95 dark:text-zinc-400 dark:hover:bg-zinc-800"
               aria-label={viewMode === 'list' ? 'Ver em grade compacta' : 'Ver em lista detalhada'}
               title={viewMode === 'list' ? 'Modo grade compacta' : 'Modo lista'}
             >
@@ -86,7 +107,7 @@ export function CheckedSection({
           <button
             type="button"
             onClick={onRestartAll}
-            className="inline-flex min-h-[34px] items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 active:scale-95 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 active:scale-95 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
             title="Devolver todos os itens para a lista de compra ativa"
           >
             <RotateCcw className="h-3.5 w-3.5" />
@@ -107,13 +128,13 @@ export function CheckedSection({
                   onChange={(e) => setFilterText(e.target.value)}
                   placeholder="Filtrar itens salvos..."
                   aria-label="Filtrar itens salvos"
-                  className="h-9 w-full rounded-xl border border-zinc-200 bg-white pl-8 pr-8 text-base text-zinc-800 placeholder:text-zinc-400 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 sm:text-xs"
+                  className="h-9 w-full rounded-xl border border-zinc-200 bg-white pl-8 pr-9 text-base text-zinc-800 placeholder:text-zinc-400 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 sm:text-xs"
                 />
                 {filterText && (
                   <button
                     type="button"
                     onClick={() => setFilterText('')}
-                    className="absolute right-2 text-zinc-400 hover:text-zinc-600"
+                    className="absolute right-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
                     aria-label="Limpar filtro"
                   >
                     <X className="h-3.5 w-3.5" />

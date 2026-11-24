@@ -7,6 +7,7 @@ import { db } from '../db/localDb';
 import { isSupabaseConfigured, signInWithGoogle, signOutUser, supabase } from '../lib/supabase';
 import { serializeError, uiLogger } from '../lib/logger';
 import { joinSharedListByCode, syncListNow } from '../db/syncEngine';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 
 /**
  * Propriedades do componente {@link ShareModal}.
@@ -37,8 +38,11 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
   const [joining, setJoining] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const listId = list?.id ?? null;
+
+  useModalAccessibility(open && Boolean(list), dialogRef, onClose);
 
   useEffect(() => {
     if (!open || !supabase) return;
@@ -61,15 +65,6 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
 
   if (!open || !list) return null;
 
@@ -122,12 +117,15 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={`Compartilhar ${list.name}`}
-        className="animate-drawer-up w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-zinc-900 sm:rounded-3xl"
+        className="animate-drawer-up max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 pb-safe shadow-2xl focus:outline-none dark:bg-zinc-900 sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700 sm:hidden" />
         <div className="mb-4 flex items-center justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -188,6 +186,8 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
                   if (!showQr) markListAsShared();
                   setShowQr((v) => !v);
                 }}
+                aria-label={showQr ? 'Ocultar QR Code' : 'Mostrar QR Code'}
+                aria-expanded={showQr}
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-zinc-700 shadow-xs ring-1 ring-zinc-200 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200 dark:ring-zinc-700"
                 title="Mostrar QR Code"
               >
@@ -228,11 +228,15 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
 
         {/* Join Another List */}
         <form onSubmit={handleJoin} className="mb-4">
-          <label className="mb-1.5 block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+          <label
+            htmlFor="share-join-code-input"
+            className="mb-1.5 block text-xs font-semibold text-zinc-600 dark:text-zinc-400"
+          >
             Entrar em uma lista com código
           </label>
           <div className="flex gap-2">
             <input
+              id="share-join-code-input"
               type="text"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value.toUpperCase())}

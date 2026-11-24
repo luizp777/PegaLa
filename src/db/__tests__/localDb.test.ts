@@ -11,6 +11,7 @@ import {
   leaveList,
   renameList,
   restoreDeletedItem,
+  setItemExactQuantityAndUnit,
   toggleItemChecked,
   uncheckAllItems,
   updateItemDetails,
@@ -138,5 +139,20 @@ describe('localDb (IndexedDB / Dexie)', () => {
     const muts = await db.pendingSync.where('listId').equals(list.id).toArray();
     expect(muts.some((m) => m.action === 'delete_item' && m.entityId === arroz.id)).toBe(true);
     expect(muts.some((m) => m.action === 'upsert_item' && m.entityId === leite.id)).toBe(true);
+  });
+
+  it('sanitizes invalid quantity or empty unit in setItemExactQuantityAndUnit', async () => {
+    const list = await createList('Validação', 'mercado');
+    const [item] = await addItemsFromText(list.id, '2 L Leite');
+
+    await setItemExactQuantityAndUnit(item, -5, '   ');
+    const updated = await db.items.get(item.id);
+    expect(updated?.quantity).toBe(2);
+    expect(updated?.unit).toBe('L');
+
+    await setItemExactQuantityAndUnit(item, 1.5, 'kg');
+    const valid = await db.items.get(item.id);
+    expect(valid?.quantity).toBe(1.5);
+    expect(valid?.unit).toBe('kg');
   });
 });
