@@ -139,7 +139,6 @@ const PERMANENT_PG_ERROR_CODES = new Set([
   '23502', // not_null_violation
   '23503', // foreign_key_violation (e.g. parent list was already deleted remotely)
   '23514', // check_violation
-  '42501', // insufficient_privilege (RLS denied)
 ]);
 
 /**
@@ -293,7 +292,10 @@ export async function flushPendingSync(): Promise<boolean> {
         }
         allSucceeded = false;
       } else {
-        // Transient error: keep queued, isolate this list, continue syncing other lists
+        // Transient or auth-expired error (including 42501): keep queued and refresh session if needed
+        if (error.code === '42501') {
+          void supabase.auth.refreshSession().catch(() => {});
+        }
         syncLogger.warn('Erro transitório ao sincronizar mutação (mantida na fila)', {
           action: mut.action,
           entityId: mut.entityId,

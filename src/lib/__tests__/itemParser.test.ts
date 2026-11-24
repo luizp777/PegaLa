@@ -4,6 +4,7 @@ import { CATALOG_BY_CATEGORY, guessCategory } from '../dictionaryPtBr';
 import { generateShareCode, getMinQuantityForUnit, getQuantityStep } from '../../db/localDb';
 import { normalizeSpokenPortuguese } from '../speechParser';
 import { getItemMonogram, resolveItemIcon } from '../itemIconMap';
+import { serializeError } from '../logger';
 
 describe('itemParser', () => {
   it('parses leading quantity and name', () => {
@@ -204,5 +205,29 @@ describe('itemIconMap', () => {
     expect(resolveItemIcon('Papel higiênico')).toEqual({ kind: 'svg', key: 'toilet_paper' });
     expect(resolveItemIcon('Pasta de dente Colgate')).toEqual({ kind: 'svg', key: 'toothpaste' });
     expect(resolveItemIcon('Arroz branco')).toEqual({ kind: 'svg', key: 'rice_bag' });
+  });
+});
+
+describe('logger', () => {
+  it('serializes Error instances, PostgREST error objects, and primitive values safely', () => {
+    const err = new TypeError('Falha de rede');
+    expect(serializeError(err)).toEqual({ name: 'TypeError', message: 'Falha de rede' });
+
+    expect(
+      serializeError({
+        code: '42501',
+        message: 'permission denied',
+        details: 'RLS',
+        hint: 'Grant privileges',
+      })
+    ).toEqual({
+      code: '42501',
+      message: 'permission denied',
+      details: 'RLS',
+      hint: 'Grant privileges',
+    });
+
+    expect(serializeError('erro simples')).toEqual({ message: 'erro simples' });
+    expect(serializeError(null)).toEqual({ message: 'null' });
   });
 });
