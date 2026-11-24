@@ -9,9 +9,11 @@ import {
   ensureDefaultLists,
   incrementItemQuantity,
   leaveList,
+  renameList,
   restoreDeletedItem,
   toggleItemChecked,
   uncheckAllItems,
+  updateItemDetails,
 } from '../localDb';
 
 describe('localDb (IndexedDB / Dexie)', () => {
@@ -91,5 +93,29 @@ describe('localDb (IndexedDB / Dexie)', () => {
     expect(await db.lists.get(list.id)).toBeUndefined();
     const muts = await db.pendingSync.where('listId').equals(list.id).toArray();
     expect(muts.map((m) => m.action)).toEqual(['leave_list']);
+  });
+
+  it('updates full item details and renames a list with sync queueing', async () => {
+    const list = await createList('Mercado', 'mercado');
+    await renameList(list.id, 'Compras da Semana');
+    const renamed = await db.lists.get(list.id);
+    expect(renamed?.name).toBe('Compras da Semana');
+
+    const [item] = await addItemsFromText(list.id, 'Leite');
+    await updateItemDetails(item, {
+      name: 'Leite sem lactose',
+      quantity: 2,
+      unit: 'L',
+      categoryId: 'bebidas',
+    });
+
+    const updated = await db.items.get(item.id);
+    expect(updated).toMatchObject({
+      name: 'Leite sem lactose',
+      normalizedName: 'leite sem lactose',
+      quantity: 2,
+      unit: 'L',
+      categoryId: 'bebidas',
+    });
   });
 });

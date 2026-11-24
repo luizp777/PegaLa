@@ -11,6 +11,13 @@
   body {
     overscroll-behavior-y: none;
   }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid rgb(16 185 129 / 0.7);
+    outline-offset: 2px;
+  }
 }
 
 .pb-safe {

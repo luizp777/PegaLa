@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Check, Minus, Plus, Tag, Trash2 } from 'lucide-react';
+import { Check, Minus, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { ShoppingItem } from '../types';
 import { CATEGORY_MAP } from '../lib/dictionaryPtBr';
 import { formatQuantity } from '../lib/itemParser';
@@ -191,7 +191,7 @@ export function ShoppingItemRow({
               <Trash2 className="h-4 w-4" />
             </button>
 
-            {/* Category Picker Trigger */}
+            {/* Item & Category Editor Trigger */}
             <button
               type="button"
               onClick={() => {
@@ -199,10 +199,10 @@ export function ShoppingItemRow({
                 onOpenCategoryPicker(item);
               }}
               className="flex h-10 w-10 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-zinc-100 active:scale-95 dark:hover:bg-zinc-800"
-              aria-label={`Trocar corredor de ${item.name}`}
-              title={`Corredor: ${CATEGORY_MAP[item.categoryId]?.label ?? 'Outros'}`}
+              aria-label={`Editar ${item.name} e corredor`}
+              title={`Editar item · Corredor: ${CATEGORY_MAP[item.categoryId]?.label ?? 'Outros'}`}
             >
-              <Tag className="h-4 w-4" />
+              <Pencil className="h-3.5 w-3.5" />
             </button>
 
             {/* Direct Inline Touch Stepper (- qty +) */}

@@ -9,11 +9,12 @@ import {
   deleteList,
   incrementItemQuantity,
   leaveList,
+  renameList,
   restoreDeletedItem,
   setItemExactQuantityAndUnit,
   toggleItemChecked,
   uncheckAllItems,
-  updateItemCategory,
+  updateItemDetails,
 } from './db/localDb';
 import { useActiveList } from './hooks/useActiveList';
 import { usePwaInstall } from './hooks/usePwaInstall';
@@ -224,9 +225,21 @@ export function App() {
     }
   };
 
-  const handleCategorySelected = async (item: ShoppingItem, categoryId: CategoryId) => {
-    await updateItemCategory(item, categoryId);
-    showToast('Corredor atualizado e aprendido!');
+  const handleRenameList = async (id: string, newName: string) => {
+    await renameList(id, newName);
+    showToast(`Lista renomeada para "${newName}"`);
+  };
+
+  const handleSaveItemDetails = async (
+    item: ShoppingItem,
+    updates: { name: string; quantity: number; unit: string; categoryId: CategoryId }
+  ) => {
+    await updateItemDetails(item, updates);
+    showToast(
+      updates.categoryId !== item.categoryId
+        ? 'Item atualizado e corredor aprendido!'
+        : 'Item atualizado!'
+    );
   };
 
   return (
@@ -237,6 +250,7 @@ export function App() {
         pendingCount={pendingCount}
         checkedCount={checkedItems.length}
         onSelectList={selectList}
+        onRenameList={(id, newName) => void handleRenameList(id, newName)}
         onOpenCreateList={() => setCreateOpen(true)}
         onDeleteList={handleDeleteList}
         onLeaveList={handleLeaveList}
@@ -252,7 +266,11 @@ export function App() {
 
       {/* Toast Notification with Optional Undo Action */}
       {activeToast && (
-        <div className="animate-toast-in fixed inset-x-0 top-16 z-40 flex justify-center px-4">
+        <div
+          role="status"
+          aria-live="polite"
+          className="animate-toast-in fixed inset-x-0 top-16 z-40 flex justify-center px-4"
+        >
           <div className="flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl dark:bg-zinc-800 dark:ring-1 dark:ring-zinc-700">
             <span>{activeToast.message}</span>
             {activeToast.undoItem && (
@@ -400,8 +418,9 @@ export function App() {
       <Suspense fallback={null}>
         {categoryPickerItem && (
           <CategoryPickerSheet
+            key={categoryPickerItem.id}
             item={categoryPickerItem}
-            onSelectCategory={(item, catId) => void handleCategorySelected(item, catId)}
+            onSaveItem={(item, updates) => void handleSaveItemDetails(item, updates)}
             onClose={() => setCategoryPickerItem(null)}
           />
         )}

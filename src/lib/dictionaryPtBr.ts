@@ -4,22 +4,22 @@ import type { CategoryDefinition, CategoryId } from '../types';
  * Lista ordenada de todas as 16 categorias/corredores suportados para mercado e farmácia.
  */
 export const CATEGORIES: CategoryDefinition[] = [
-  { id: 'hortifruti', label: 'Hortifruti', order: 1, colorClass: 'text-emerald-600 dark:text-emerald-400' },
-  { id: 'padaria', label: 'Padaria & Matinais', order: 2, colorClass: 'text-amber-600 dark:text-amber-400' },
-  { id: 'laticinios', label: 'Laticínios & Frios', order: 3, colorClass: 'text-yellow-600 dark:text-yellow-400' },
-  { id: 'acougue', label: 'Açougue & Peixaria', order: 4, colorClass: 'text-rose-600 dark:text-rose-400' },
-  { id: 'mercearia', label: 'Mercearia', order: 5, colorClass: 'text-orange-600 dark:text-orange-400' },
-  { id: 'congelados', label: 'Congelados', order: 6, colorClass: 'text-sky-600 dark:text-sky-400' },
-  { id: 'bebidas', label: 'Bebidas', order: 7, colorClass: 'text-blue-600 dark:text-blue-400' },
-  { id: 'limpeza', label: 'Limpeza', order: 8, colorClass: 'text-cyan-600 dark:text-cyan-400' },
-  { id: 'utilidades', label: 'Utilidades & Casa', order: 9, colorClass: 'text-slate-600 dark:text-slate-400' },
-  { id: 'higiene', label: 'Higiene Pessoal', order: 10, colorClass: 'text-teal-600 dark:text-teal-400' },
-  { id: 'dermocosmeticos', label: 'Dermocosméticos & Beleza', order: 11, colorClass: 'text-fuchsia-600 dark:text-fuchsia-400' },
-  { id: 'medicamentos', label: 'Medicamentos & Saúde', order: 12, colorClass: 'text-red-600 dark:text-red-400' },
-  { id: 'primeiros_socorros', label: 'Primeiros Socorros', order: 13, colorClass: 'text-pink-600 dark:text-pink-400' },
-  { id: 'bebe', label: 'Bebê', order: 14, colorClass: 'text-violet-600 dark:text-violet-400' },
-  { id: 'pet', label: 'Pet', order: 15, colorClass: 'text-purple-600 dark:text-purple-400' },
-  { id: 'outros', label: 'Outros', order: 99, colorClass: 'text-zinc-500 dark:text-zinc-400' },
+  { id: 'hortifruti', label: 'Hortifruti', shortLabel: 'Hortifrúti', order: 1, colorClass: 'text-emerald-600 dark:text-emerald-400' },
+  { id: 'padaria', label: 'Padaria & Matinais', shortLabel: 'Padaria', order: 2, colorClass: 'text-amber-600 dark:text-amber-400' },
+  { id: 'laticinios', label: 'Laticínios & Frios', shortLabel: 'Laticínios', order: 3, colorClass: 'text-yellow-600 dark:text-yellow-400' },
+  { id: 'acougue', label: 'Açougue & Peixaria', shortLabel: 'Açougue', order: 4, colorClass: 'text-rose-600 dark:text-rose-400' },
+  { id: 'mercearia', label: 'Mercearia', shortLabel: 'Mercearia', order: 5, colorClass: 'text-orange-600 dark:text-orange-400' },
+  { id: 'congelados', label: 'Congelados', shortLabel: 'Congelados', order: 6, colorClass: 'text-sky-600 dark:text-sky-400' },
+  { id: 'bebidas', label: 'Bebidas', shortLabel: 'Bebidas', order: 7, colorClass: 'text-blue-600 dark:text-blue-400' },
+  { id: 'limpeza', label: 'Limpeza', shortLabel: 'Limpeza', order: 8, colorClass: 'text-cyan-600 dark:text-cyan-400' },
+  { id: 'utilidades', label: 'Utilidades & Casa', shortLabel: 'Utilidades', order: 9, colorClass: 'text-slate-600 dark:text-slate-400' },
+  { id: 'higiene', label: 'Higiene Pessoal', shortLabel: 'Higiene', order: 10, colorClass: 'text-teal-600 dark:text-teal-400' },
+  { id: 'dermocosmeticos', label: 'Dermocosméticos & Beleza', shortLabel: 'Dermocosm.', order: 11, colorClass: 'text-fuchsia-600 dark:text-fuchsia-400' },
+  { id: 'medicamentos', label: 'Medicamentos & Saúde', shortLabel: 'Remédios', order: 12, colorClass: 'text-red-600 dark:text-red-400' },
+  { id: 'primeiros_socorros', label: 'Primeiros Socorros', shortLabel: '1º Socorros', order: 13, colorClass: 'text-pink-600 dark:text-pink-400' },
+  { id: 'bebe', label: 'Bebê', shortLabel: 'Bebê', order: 14, colorClass: 'text-violet-600 dark:text-violet-400' },
+  { id: 'pet', label: 'Pet', shortLabel: 'Pet', order: 15, colorClass: 'text-purple-600 dark:text-purple-400' },
+  { id: 'outros', label: 'Outros', shortLabel: 'Outros', order: 99, colorClass: 'text-zinc-500 dark:text-zinc-400' },
 ];
 
 /**

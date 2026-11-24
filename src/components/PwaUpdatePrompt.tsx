@@ -42,7 +42,11 @@ export function PwaUpdatePrompt() {
   if (!needRefresh) return null;
 
   return (
-    <div className="animate-toast-in fixed inset-x-0 bottom-28 z-40 flex justify-center px-4">
+    <div
+      role="status"
+      aria-live="polite"
+      className="animate-toast-in fixed inset-x-0 top-16 z-40 flex justify-center px-4"
+    >
       <div className="flex items-center gap-2.5 rounded-2xl border border-emerald-500/30 bg-zinc-900 px-3.5 py-2.5 text-xs font-semibold text-white shadow-xl dark:bg-zinc-800">
         <RefreshCw className="h-4 w-4 shrink-0 text-emerald-400" />
         <span>Nova versão disponível</span>

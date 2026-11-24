@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import {
+  Check,
   ChevronDown,
   Lock,
   LogOut,
   Moon,
+  Pencil,
   Plus,
   Share2,
   Sun,
@@ -32,6 +34,8 @@ interface HeaderProps {
   checkedCount: number;
   /** Callback acionado ao trocar a lista ativa. */
   onSelectList: (id: string) => void;
+  /** Callback acionado ao renomear uma lista pelo seu ID. */
+  onRenameList: (id: string, newName: string) => void;
   /** Abre o modal de criação de nova lista. */
   onOpenCreateList: () => void;
   /** Callback acionado para excluir uma lista como proprietário pelo seu ID. */
@@ -69,6 +73,7 @@ export function Header({
   pendingCount,
   checkedCount,
   onSelectList,
+  onRenameList,
   onOpenCreateList,
   onDeleteList,
   onLeaveList,
@@ -83,6 +88,8 @@ export function Header({
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editingListId, setEditingListId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -98,12 +105,14 @@ export function Header({
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
         setConfirmDeleteId(null);
+        setEditingListId(null);
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setMenuOpen(false);
         setConfirmDeleteId(null);
+        setEditingListId(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -149,12 +158,12 @@ export function Header({
                 </h1>
                 {activeList && (
                   activeList.isShared ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-500/12 px-2 py-0.5 text-[11px] font-bold text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
+                    <span className="hidden shrink-0 items-center gap-1 rounded-full bg-sky-500/12 px-2 py-0.5 text-[11px] font-bold text-sky-600 dark:bg-sky-500/20 dark:text-sky-300 sm:inline-flex">
                       <Users className="h-3 w-3" />
                       <span>Compartilhada</span>
                     </span>
                   ) : (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    <span className="hidden shrink-0 items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 sm:inline-flex">
                       <Lock className="h-2.5 w-2.5" />
                       <span>Privada</span>
                     </span>
@@ -166,7 +175,20 @@ export function Header({
                   }`}
                 />
               </div>
-              <div className="flex items-center gap-2 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                {activeList && (
+                  activeList.isShared ? (
+                    <span className="inline-flex items-center gap-0.5 font-semibold text-sky-600 dark:text-sky-400 sm:hidden">
+                      <Users className="h-2.5 w-2.5" />
+                      Compartilhada
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-0.5 sm:hidden">
+                      <Lock className="h-2.5 w-2.5" />
+                      Privada
+                    </span>
+                  )
+                )}
                 {totalCount > 0 && (
                   <span className="font-semibold text-zinc-700 dark:text-zinc-300">
                     {pendingCount === 0
@@ -197,13 +219,14 @@ export function Header({
           </button>
 
           {menuOpen && (
-            <div className="absolute left-0 top-full mt-1.5 w-64 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+            <div className="animate-fade-slide-up absolute left-0 top-full mt-1.5 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                 Suas Listas
               </div>
               <div className="max-h-64 space-y-0.5 overflow-y-auto">
                 {lists.map((list) => {
                   const isCurrent = list.id === activeList?.id;
+                  const isEditing = editingListId === list.id;
                   return (
                     <div
                       key={list.id}
@@ -213,84 +236,138 @@ export function Header({
                           : 'text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800'
                       }`}
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onSelectList(list.id);
-                          setMenuOpen(false);
-                        }}
-                        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                      >
-                        <ListTypeIcon
-                          type={list.type}
-                          className={`h-4 w-4 shrink-0 ${
-                            isCurrent ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500'
-                          }`}
-                        />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-sm font-semibold">{list.name}</span>
-                            {list.isShared ? (
-                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-bold text-sky-600 dark:text-sky-300">
-                                <Users className="h-2.5 w-2.5" />
-                                Compartilhada
-                              </span>
-                            ) : (
-                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-zinc-200/70 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                                <Lock className="h-2.5 w-2.5" />
-                                Privada
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-zinc-400">{list.shareCode}</div>
-                        </div>
-                      </button>
-                      {lists.length > 1 && (() => {
-                        const isGuest = Boolean(
-                          list.isShared && list.ownerId && currentUserId && list.ownerId !== currentUserId
-                        );
-                        const confirmLabel = isGuest
-                          ? 'Sair?'
-                          : list.isShared
-                            ? 'Apagar p/ todos?'
-                            : 'Confirmar?';
-                        return confirmDeleteId === list.id ? (
+                      {isEditing ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (editingName.trim()) {
+                              onRenameList(list.id, editingName.trim());
+                            }
+                            setEditingListId(null);
+                          }}
+                          className="flex min-w-0 flex-1 items-center gap-1.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') {
+                                e.stopPropagation();
+                                setEditingListId(null);
+                              }
+                            }}
+                            aria-label={`Novo nome para ${list.name}`}
+                            className="h-8 min-w-0 flex-1 rounded-lg border border-emerald-500 bg-white px-2 text-base font-semibold text-zinc-900 focus:outline-none dark:bg-zinc-950 dark:text-zinc-100 sm:text-sm"
+                          />
+                          <button
+                            type="submit"
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white"
+                            aria-label="Salvar novo nome"
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                        </form>
+                      ) : (
+                        <>
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (isGuest) {
-                                onLeaveList(list.id);
-                              } else {
-                                onDeleteList(list.id);
-                              }
-                              setConfirmDeleteId(null);
+                            onClick={() => {
+                              onSelectList(list.id);
                               setMenuOpen(false);
                             }}
-                            className="ml-1 shrink-0 rounded-lg bg-red-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-red-500 active:scale-95"
-                            aria-label={
-                              isGuest
-                                ? `Confirmar saída de ${list.name}`
-                                : `Confirmar exclusão de ${list.name}`
-                            }
+                            className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                           >
-                            {confirmLabel}
+                            <ListTypeIcon
+                              type={list.type}
+                              className={`h-4 w-4 shrink-0 ${
+                                isCurrent ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500'
+                              }`}
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate text-sm font-semibold">{list.name}</span>
+                                {list.isShared ? (
+                                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[11px] font-bold text-sky-600 dark:text-sky-300">
+                                    <Users className="h-2.5 w-2.5" />
+                                    Compartilhada
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-zinc-200/70 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                    <Lock className="h-2.5 w-2.5" />
+                                    Privada
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">{list.shareCode}</div>
+                            </div>
                           </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmDeleteId(list.id);
-                            }}
-                            className="ml-1 rounded-lg p-1.5 text-zinc-400 opacity-70 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                            aria-label={isGuest ? `Sair de ${list.name}` : `Excluir ${list.name}`}
-                            title={isGuest ? 'Sair desta lista compartilhada' : 'Excluir lista'}
-                          >
-                            {isGuest ? <LogOut className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-                          </button>
-                        );
-                      })()}
+                          <div className="ml-1 flex shrink-0 items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingListId(list.id);
+                                setEditingName(list.name);
+                                setConfirmDeleteId(null);
+                              }}
+                              className="rounded-lg p-1.5 text-zinc-400 opacity-70 hover:bg-zinc-200/60 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                              aria-label={`Renomear ${list.name}`}
+                              title="Renomear lista"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            {lists.length > 1 && (() => {
+                              const isGuest = Boolean(
+                                list.isShared && list.ownerId && currentUserId && list.ownerId !== currentUserId
+                              );
+                              const confirmLabel = isGuest
+                                ? 'Sair?'
+                                : list.isShared
+                                  ? 'Apagar p/ todos?'
+                                  : 'Confirmar?';
+                              return confirmDeleteId === list.id ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isGuest) {
+                                      onLeaveList(list.id);
+                                    } else {
+                                      onDeleteList(list.id);
+                                    }
+                                    setConfirmDeleteId(null);
+                                    setMenuOpen(false);
+                                  }}
+                                  className="ml-0.5 shrink-0 rounded-lg bg-red-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-red-500 active:scale-95"
+                                  aria-label={
+                                    isGuest
+                                      ? `Confirmar saída de ${list.name}`
+                                      : `Confirmar exclusão de ${list.name}`
+                                  }
+                                >
+                                  {confirmLabel}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmDeleteId(list.id);
+                                  }}
+                                  className="rounded-lg p-1.5 text-zinc-400 opacity-70 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                                  aria-label={isGuest ? `Sair de ${list.name}` : `Excluir ${list.name}`}
+                                  title={isGuest ? 'Sair desta lista compartilhada' : 'Excluir lista'}
+                                >
+                                  {isGuest ? <LogOut className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
+                                </button>
+                              );
+                            })()}
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}

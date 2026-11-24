@@ -209,7 +209,7 @@ export function QuickCatalogDrawer({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar entre 370+ itens de mercado e farmácia..."
             aria-label="Buscar no catálogo"
-            className="h-9 w-full rounded-xl border border-zinc-200 bg-white pl-8 pr-8 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+            className="h-10 w-full rounded-xl border border-zinc-200 bg-white pl-8 pr-8 text-base text-zinc-800 placeholder:text-zinc-500 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-400 sm:h-9 sm:text-xs"
           />
           {searchQuery && (
             <button
@@ -260,7 +260,7 @@ export function QuickCatalogDrawer({
                 }`}
               >
                 <CategoryIcon categoryId={catId} size="sm" inverted={isSelected} />
-                <span>{cat.label.split(' ')[0]}</span>
+                <span>{cat.shortLabel ?? cat.label}</span>
               </button>
             );
           })}
@@ -330,7 +330,7 @@ export function QuickCatalogDrawer({
                         {formatQuantity(activeItem.quantity, activeItem.unit)}
                       </span>
                     ) : isCheckedInList ? (
-                      <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                      <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                         <Check className="h-3 w-3 stroke-[2.5]" />
                       </span>
                     ) : (

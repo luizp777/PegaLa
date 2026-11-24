@@ -32,6 +32,8 @@ export interface CategoryDefinition {
   id: CategoryId;
   /** Nome legível exibido na interface. */
   label: string;
+  /** Rótulo curto opcional para abas compactas no catálogo rápido. */
+  shortLabel?: string;
   /** Ordem de exibição do corredor na lista. */
   order: number;
   /** Classes Tailwind de cor do cabeçalho da categoria. */

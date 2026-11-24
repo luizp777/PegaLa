@@ -30,7 +30,7 @@ interface ShareModalProps {
  * @returns Modal renderizado ou `null` quando fechado.
  */
 export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProps) {
-  const [copied, setCopied] = useState(false);
+  const [copiedTarget, setCopiedTarget] = useState<'code' | 'link' | null>(null);
   const [showQr, setShowQr] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joinStatus, setJoinStatus] = useState<string | null>(null);
@@ -68,12 +68,12 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
     }
   };
 
-  const handleCopy = async (text: string) => {
+  const handleCopy = async (text: string, target: 'code' | 'link') => {
     try {
       await navigator.clipboard.writeText(text);
       markListAsShared();
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedTarget(target);
+      setTimeout(() => setCopiedTarget(null), 2000);
     } catch (err) {
       uiLogger.debug('Falha ao copiar para a área de transferência', serializeError(err));
       setJoinStatus('Não foi possível copiar automaticamente. Selecione o código manualmente.');
@@ -111,7 +111,7 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
         role="dialog"
         aria-modal="true"
         aria-label={`Compartilhar ${list.name}`}
-        className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-zinc-900 sm:rounded-3xl"
+        className="animate-drawer-up w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-zinc-900 sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -158,11 +158,15 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => handleCopy(list.shareCode)}
+                onClick={() => handleCopy(list.shareCode, 'code')}
                 className="flex h-9 items-center gap-1.5 rounded-xl bg-white px-3 text-xs font-semibold text-zinc-700 shadow-xs ring-1 ring-zinc-200 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200 dark:ring-zinc-700"
               >
-                {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? 'Copiado' : 'Copiar'}
+                {copiedTarget === 'code' ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+                {copiedTarget === 'code' ? 'Copiado' : 'Copiar'}
               </button>
               <button
                 type="button"
@@ -195,11 +199,15 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
             </button>
             <button
               type="button"
-              onClick={() => handleCopy(shareUrl)}
+              onClick={() => handleCopy(shareUrl, 'link')}
               className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 active:scale-95 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
             >
-              <Link2 className="h-4 w-4" />
-              Copiar Link
+              {copiedTarget === 'link' ? (
+                <Check className="h-4 w-4 text-emerald-500" />
+              ) : (
+                <Link2 className="h-4 w-4" />
+              )}
+              {copiedTarget === 'link' ? 'Link copiado' : 'Copiar Link'}
             </button>
           </div>
         </div>
@@ -214,8 +222,8 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
               type="text"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-              placeholder="Ex: PEGA-8492"
-              className="h-11 flex-1 rounded-xl border border-zinc-300 bg-zinc-50 px-3 font-mono text-sm uppercase text-zinc-900 placeholder:normal-case focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+              placeholder="Ex: PEGA-ABCD1234"
+              className="h-11 flex-1 rounded-xl border border-zinc-300 bg-zinc-50 px-3 font-mono text-base uppercase text-zinc-900 placeholder:normal-case focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 sm:text-sm"
             />
             <button
               type="submit"

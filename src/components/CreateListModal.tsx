@@ -60,7 +60,7 @@ export function CreateListModal({ open, onClose, onCreate }: CreateListModalProp
         role="dialog"
         aria-modal="true"
         aria-label="Nova Lista"
-        className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-zinc-900 sm:rounded-3xl"
+        className="animate-drawer-up w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-zinc-900 sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
