@@ -75,6 +75,7 @@ function toRemoteList(list: ShoppingList, userId: string | null): RemoteListRow 
  * Converte um registro remoto da tabela `lists` para {@link ShoppingList}.
  *
  * @param row - Registro retornado pelo Supabase.
+ * @param isShared - Indica se a lista foi importada como compartilhada.
  * @returns Lista local marcada como sincronizada.
  */
 function fromRemoteList(row: RemoteListRow, isShared = false): ShoppingList {

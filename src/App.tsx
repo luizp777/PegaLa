@@ -55,6 +55,7 @@ export function App() {
     lists,
     activeList,
     isJoiningSharedList,
+    isLoadingList,
     groupedPending,
     checkedItems,
     frequentSuggestions,
@@ -264,7 +265,7 @@ export function App() {
               Conectando e carregando os itens em tempo real.
             </p>
           </div>
-        ) : pendingCount === 0 && checkedItems.length === 0 ? (
+        ) : isLoadingList ? null : pendingCount === 0 && checkedItems.length === 0 ? (
           <div className="mt-8 flex flex-col items-center justify-center rounded-3xl border border-dashed border-zinc-300 bg-white/70 px-6 py-10 text-center dark:border-zinc-800 dark:bg-zinc-900/30">
             <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400">
               <ShoppingBag className="h-7 w-7" />

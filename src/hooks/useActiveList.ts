@@ -96,6 +96,10 @@ export function useActiveList() {
     [activeList?.id]
   );
   const items = useMemo(() => itemsQuery ?? [], [itemsQuery]);
+  const isLoadingList =
+    isJoiningSharedList ||
+    listsQuery === undefined ||
+    (activeList !== null && itemsQuery === undefined);
 
   const pendingSyncCount = useLiveQuery(() => db.pendingSync.count(), []) ?? 0;
 
@@ -149,6 +153,7 @@ export function useActiveList() {
     lists,
     activeList,
     isJoiningSharedList,
+    isLoadingList,
     items,
     groupedPending,
     checkedItems,
