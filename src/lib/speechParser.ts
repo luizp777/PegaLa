@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { serializeError, uiLogger } from './logger';
 
 const NUMBER_WORDS_PT: Record<string, string> = {
   um: '1',
@@ -210,6 +211,7 @@ export function useVoiceInput(
       recognition.onerror = (ev) => {
         setIsListening(false);
         setInterimText('');
+        uiLogger.warn('Erro no reconhecimento de voz', { code: ev.error });
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
           errorCallbackRef.current?.('Permita o acesso ao microfone no navegador');
         } else if (ev.error === 'network') {
@@ -228,7 +230,8 @@ export function useVoiceInput(
       setIsListening(true);
       setInterimText('');
       recognition.start();
-    } catch {
+    } catch (err) {
+      uiLogger.warn('Exceção ao iniciar captura de voz', serializeError(err));
       setIsListening(false);
       setInterimText('');
     }

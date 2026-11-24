@@ -2,6 +2,9 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
+import { appLogger, installGlobalErrorHandlers, serializeError } from './lib/logger';
+
+installGlobalErrorHandlers();
 
 /**
  * Propriedades aceitas pelo {@link AppErrorBoundary}.
@@ -43,7 +46,10 @@ class AppErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState>
    * @param info - Pilha de componentes React onde o erro ocorreu.
    */
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('PegaLá runtime error:', error, info);
+    appLogger.fatal('Erro de renderização capturado pelo ErrorBoundary', {
+      error: serializeError(error),
+      componentStack: info.componentStack,
+    });
   }
 
   /**

@@ -1,6 +1,7 @@
 import type { PostgrestError, RealtimeChannel } from '@supabase/supabase-js';
 import { db } from './localDb';
 import { ensureSupabaseSession, isSupabaseConfigured, supabase } from '../lib/supabase';
+import { serializeError, syncLogger } from '../lib/logger';
 import type { CategoryId, ListType, PendingSyncMutation, ShoppingItem, ShoppingList } from '../types';
 
 /**
@@ -211,9 +212,17 @@ export async function flushPendingSync(): Promise<boolean> {
             ownerId: localList.ownerId ?? user.id,
           });
         } else {
+          syncLogger.warn('Falha ao enviar itens iniciais da lista local', {
+            listId: localList.id,
+            error: serializeError(itemsErr),
+          });
           allSucceeded = false;
         }
       } else {
+        syncLogger.warn('Falha ao enviar lista local inicial', {
+          listId: localList.id,
+          error: serializeError(listErr),
+        });
         allSucceeded = false;
       }
     }
@@ -273,12 +282,24 @@ export async function flushPendingSync(): Promise<boolean> {
         }
       } else if (isPermanentError(error)) {
         // Discard permanently invalid mutation to prevent head-of-line blocking
+        syncLogger.warn('Mutação permanente descartada da fila offline', {
+          action: mut.action,
+          entityId: mut.entityId,
+          listId: mut.listId,
+          error: serializeError(error),
+        });
         if (mut.id !== undefined) {
           await db.pendingSync.delete(mut.id);
         }
         allSucceeded = false;
       } else {
         // Transient error: keep queued, isolate this list, continue syncing other lists
+        syncLogger.warn('Erro transitório ao sincronizar mutação (mantida na fila)', {
+          action: mut.action,
+          entityId: mut.entityId,
+          listId: mut.listId,
+          error: serializeError(error),
+        });
         failedListIds.add(mut.listId);
         allSucceeded = false;
       }
@@ -286,7 +307,7 @@ export async function flushPendingSync(): Promise<boolean> {
 
     return allSucceeded;
   } catch (err) {
-    console.warn('[PegaLá sync] flushPendingSync failed:', err);
+    syncLogger.error('Exceção inesperada em flushPendingSync', serializeError(err));
     return false;
   } finally {
     flushing = false;
@@ -336,6 +357,10 @@ export async function joinSharedListByCode(rawCode: string): Promise<{
     if (!rpcError && Array.isArray(rpcRows) && rpcRows.length > 0) {
       listRow = rpcRows[0];
     } else if (rpcError) {
+      syncLogger.warn('RPC join_list_by_share_code falhou; tentando consulta direta', {
+        code,
+        error: serializeError(rpcError),
+      });
       // Fallback for legacy databases where the RPC was not yet deployed
       const { data: directRow } = await supabase
         .from('lists')
@@ -352,18 +377,27 @@ export async function joinSharedListByCode(rawCode: string): Promise<{
     const list = fromRemoteList(listRow);
     await db.lists.put(list);
 
-    const { data: itemRows } = await supabase
+    const { data: itemRows, error: itemsError } = await supabase
       .from('list_items')
       .select('*')
       .eq('list_id', list.id)
       .returns<RemoteItemRow[]>();
 
-    if (itemRows && itemRows.length > 0) {
+    if (itemsError) {
+      syncLogger.warn('Falha ao importar itens ao ingressar na lista compartilhada', {
+        listId: list.id,
+        error: serializeError(itemsError),
+      });
+    } else if (itemRows && itemRows.length > 0) {
       await db.items.bulkPut(itemRows.map(fromRemoteItem));
     }
 
     return { list, error: null };
-  } catch {
+  } catch (err) {
+    syncLogger.error('Exceção ao ingressar em lista compartilhada', {
+      code,
+      error: serializeError(err),
+    });
     return { list: null, error: 'Erro de conexão ao buscar lista compartilhada.' };
   }
 }
@@ -390,7 +424,15 @@ export async function pullListFromCloud(listId: string): Promise<void> {
       .eq('list_id', listId)
       .returns<RemoteItemRow[]>();
 
-    if (error || !itemRows) return;
+    if (error || !itemRows) {
+      if (error) {
+        syncLogger.warn('Falha ao buscar itens da nuvem em pullListFromCloud', {
+          listId,
+          error: serializeError(error),
+        });
+      }
+      return;
+    }
 
     const remoteMap = new Map(itemRows.map((r) => [r.id, fromRemoteItem(r)]));
     const [localItems, pendingForList] = await Promise.all([
@@ -420,8 +462,11 @@ export async function pullListFromCloud(listId: string): Promise<void> {
     if (idsToDelete.length > 0) {
       await db.items.bulkDelete(idsToDelete);
     }
-  } catch {
-    // ignore offline pull errors
+  } catch (err) {
+    syncLogger.debug('Falha em pullListFromCloud (possível perda momentânea de rede)', {
+      listId,
+      error: serializeError(err),
+    });
   }
 }
 
@@ -447,7 +492,13 @@ export async function syncListNow(listId: string): Promise<boolean> {
       const { error: listErr } = await supabase
         .from('lists')
         .upsert(toRemoteList(localList, user.id), { onConflict: 'id' });
-      if (listErr) return false;
+      if (listErr) {
+        syncLogger.warn('Falha em syncListNow ao enviar lista', {
+          listId,
+          error: serializeError(listErr),
+        });
+        return false;
+      }
     }
 
     const localItems = await db.items.where('listId').equals(listId).toArray();
@@ -455,7 +506,14 @@ export async function syncListNow(listId: string): Promise<boolean> {
       const { error: itemsErr } = await supabase
         .from('list_items')
         .upsert(localItems.map(toRemoteItem), { onConflict: 'id' });
-      if (itemsErr) return false;
+      if (itemsErr) {
+        syncLogger.warn('Falha em syncListNow ao enviar itens', {
+          listId,
+          count: localItems.length,
+          error: serializeError(itemsErr),
+        });
+        return false;
+      }
     }
 
     await db.lists.update(listId, {
@@ -463,7 +521,11 @@ export async function syncListNow(listId: string): Promise<boolean> {
       ownerId: localList.ownerId ?? user.id,
     });
     return true;
-  } catch {
+  } catch (err) {
+    syncLogger.error('Exceção inesperada em syncListNow', {
+      listId,
+      error: serializeError(err),
+    });
     return false;
   }
 }
@@ -489,16 +551,23 @@ export function subscribeToListRealtime(listId: string): () => void {
 
   const reconcileNow = async () => {
     if (cancelled || !supabase || !navigator.onLine) return;
-    const user = await ensureSupabaseSession();
-    if (!user || cancelled || !supabase) return;
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      await supabase.realtime.setAuth(session.access_token);
+    try {
+      const user = await ensureSupabaseSession();
+      if (!user || cancelled || !supabase) return;
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await supabase.realtime.setAuth(session.access_token);
+      }
+      await flushPendingSync();
+      await pullListFromCloud(listId);
+    } catch (err) {
+      syncLogger.warn('Falha na reconciliação da lista', {
+        listId,
+        error: serializeError(err),
+      });
     }
-    await flushPendingSync();
-    await pullListFromCloud(listId);
   };
 
   const handleVisibilityOrOnline = () => {
@@ -518,73 +587,92 @@ export function subscribeToListRealtime(listId: string): () => void {
   }, 5000);
 
   void (async () => {
-    const user = await ensureSupabaseSession();
-    if (!user || cancelled || !supabase) return;
+    try {
+      const user = await ensureSupabaseSession();
+      if (!user || cancelled || !supabase) return;
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      await supabase.realtime.setAuth(session.access_token);
-    }
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await supabase.realtime.setAuth(session.access_token);
+      }
 
-    if (cancelled) return;
+      if (cancelled) return;
 
-    // Push pending mutations and pull latest state before opening the live channel
-    await flushPendingSync();
-    await pullListFromCloud(listId);
+      // Push pending mutations and pull latest state before opening the live channel
+      await flushPendingSync();
+      await pullListFromCloud(listId);
 
-    if (cancelled || !supabase) return;
+      if (cancelled || !supabase) return;
 
-    if (activeChannel) {
-      supabase.removeChannel(activeChannel);
-      activeChannel = null;
-    }
+      if (activeChannel) {
+        supabase.removeChannel(activeChannel);
+        activeChannel = null;
+      }
 
-    activeChannel = supabase
-      .channel(`list-sync-${listId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'list_items',
-          filter: `list_id=eq.${listId}`,
-        },
-        async (payload) => {
-          if (payload.eventType === 'DELETE') {
-            const oldRow = payload.old as { id?: string };
-            if (oldRow?.id) {
-              await db.items.delete(oldRow.id);
-            }
-          } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const row = payload.new as RemoteItemRow;
-            if (!row?.id) return;
+      activeChannel = supabase
+        .channel(`list-sync-${listId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'list_items',
+            filter: `list_id=eq.${listId}`,
+          },
+          async (payload) => {
+            try {
+              if (payload.eventType === 'DELETE') {
+                const oldRow = payload.old as { id?: string };
+                if (oldRow?.id) {
+                  await db.items.delete(oldRow.id);
+                }
+              } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                const row = payload.new as RemoteItemRow;
+                if (!row?.id) return;
 
-            // Guard against overwriting an unsynced local mutation or newer local edit
-            const hasPending = await db.pendingSync
-              .where('listId')
-              .equals(listId)
-              .filter((m) => m.entityId === row.id)
-              .count();
-            if (hasPending > 0) return;
+                // Guard against overwriting an unsynced local mutation or newer local edit
+                const hasPending = await db.pendingSync
+                  .where('listId')
+                  .equals(listId)
+                  .filter((m) => m.entityId === row.id)
+                  .count();
+                if (hasPending > 0) return;
 
-            const remoteItem = fromRemoteItem(row);
-            const local = await db.items.get(row.id);
-            if (!local || new Date(remoteItem.updatedAt) >= new Date(local.updatedAt)) {
-              await db.items.put(remoteItem);
+                const remoteItem = fromRemoteItem(row);
+                const local = await db.items.get(row.id);
+                if (!local || new Date(remoteItem.updatedAt) >= new Date(local.updatedAt)) {
+                  await db.items.put(remoteItem);
+                }
+              }
+            } catch (err) {
+              syncLogger.error('Erro ao aplicar evento Realtime no IndexedDB', {
+                listId,
+                eventType: payload.eventType,
+                error: serializeError(err),
+              });
             }
           }
-        }
-      )
-      .subscribe((status) => {
-        realtimeConnected = status === 'SUBSCRIBED';
-        if (status === 'SUBSCRIBED') {
-          void pullListFromCloud(listId);
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          console.warn(`[PegaLá sync] Realtime status (${listId}):`, status);
-        }
+        )
+        .subscribe((status) => {
+          realtimeConnected = status === 'SUBSCRIBED';
+          if (status === 'SUBSCRIBED') {
+            syncLogger.debug('Canal Realtime inscrito', { listId });
+            void pullListFromCloud(listId);
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            syncLogger.warn('Status anormal do canal Realtime (fallback ativo)', {
+              listId,
+              status,
+            });
+          }
+        });
+    } catch (err) {
+      syncLogger.error('Falha ao inicializar assinatura Realtime', {
+        listId,
+        error: serializeError(err),
       });
+    }
   })();
 
   return () => {

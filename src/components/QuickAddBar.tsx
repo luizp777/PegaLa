@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { normalizeText, searchDictionary } from '../lib/dictionaryPtBr';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
+import { serializeError, uiLogger } from '../lib/logger';
 import { useVoiceInput } from '../lib/speechParser';
 import type { CategoryId, ShoppingItem, ShoppingList, UserDictionaryEntry } from '../types';
 import { QuickCatalogDrawer } from './QuickCatalogDrawer';
@@ -246,7 +247,8 @@ export function QuickAddBar({
             : `${added.length} itens colados da lista!`
         );
       }
-    } catch {
+    } catch (err) {
+      uiLogger.debug('Falha ao ler área de transferência', serializeError(err));
       onShowToast('Permita acesso à área de transferência ou cole no campo');
       inputRef.current?.focus();
     }

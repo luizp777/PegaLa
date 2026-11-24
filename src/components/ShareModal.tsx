@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@supabase/supabase-js';
 import type { ShoppingList } from '../types';
 import { isSupabaseConfigured, signInWithGoogle, signOutUser, supabase } from '../lib/supabase';
+import { serializeError, uiLogger } from '../lib/logger';
 import { joinSharedListByCode, syncListNow } from '../db/syncEngine';
 
 /**
@@ -63,8 +64,9 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // fallback ignored
+    } catch (err) {
+      uiLogger.debug('Falha ao copiar para a área de transferência', serializeError(err));
+      setJoinStatus('Não foi possível copiar automaticamente. Selecione o código manualmente.');
     }
   };
 

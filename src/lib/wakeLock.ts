@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { serializeError, uiLogger } from './logger';
 
 /**
  * Contrato mínimo do sentinela retornado pela Screen Wake Lock API.
@@ -40,7 +41,8 @@ export function useWakeLock() {
           setIsActive(false);
         });
       }
-    } catch {
+    } catch (err) {
+      uiLogger.debug('Falha ao solicitar Wake Lock de tela', serializeError(err));
       setIsActive(false);
     }
   }, [isSupported]);
@@ -50,8 +52,8 @@ export function useWakeLock() {
     if (sentinelRef.current) {
       try {
         await sentinelRef.current.release();
-      } catch {
-        // Ignora erro caso já tenha sido liberado pelo sistema
+      } catch (err) {
+        uiLogger.debug('Falha ao liberar Wake Lock (já liberado pelo sistema)', serializeError(err));
       }
       sentinelRef.current = null;
     }

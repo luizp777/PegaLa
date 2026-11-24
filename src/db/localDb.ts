@@ -9,6 +9,7 @@ import type {
 } from '../types';
 import { guessCategory, normalizeText } from '../lib/dictionaryPtBr';
 import { parseMultiLineInput } from '../lib/itemParser';
+import { dbLogger, serializeError } from '../lib/logger';
 
 /**
  * Banco de dados local IndexedDB (via Dexie.js) responsável pela persistência offline-first
@@ -86,7 +87,8 @@ const LAST_LIST_KEY = 'pegala_last_list_id';
 export function getLastActiveListId(): string | null {
   try {
     return localStorage.getItem(LAST_LIST_KEY);
-  } catch {
+  } catch (err) {
+    dbLogger.debug('Falha ao ler última lista ativa do localStorage', serializeError(err));
     return null;
   }
 }
@@ -99,8 +101,8 @@ export function getLastActiveListId(): string | null {
 export function setLastActiveListId(listId: string): void {
   try {
     localStorage.setItem(LAST_LIST_KEY, listId);
-  } catch {
-    // Ignora erros de armazenamento privado/quota
+  } catch (err) {
+    dbLogger.debug('Falha ao salvar última lista ativa no localStorage', serializeError(err));
   }
 }
 

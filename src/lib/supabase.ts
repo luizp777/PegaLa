@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import { authLogger, serializeError } from './logger';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -39,19 +40,30 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 export async function ensureSupabaseSession(): Promise<User | null> {
   if (!supabase) return null;
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  try {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-  if (session?.user) {
-    return session.user;
-  }
+    if (sessionError) {
+      authLogger.warn('Falha ao recuperar sessão Supabase', serializeError(sessionError));
+    }
 
-  const { data, error } = await supabase.auth.signInAnonymously();
-  if (error) {
+    if (session?.user) {
+      return session.user;
+    }
+
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if (error) {
+      authLogger.warn('Falha no login anônimo Supabase', serializeError(error));
+      return null;
+    }
+    return data.user ?? null;
+  } catch (err) {
+    authLogger.error('Exceção ao garantir sessão Supabase', serializeError(err));
     return null;
   }
-  return data.user ?? null;
 }
 
 /**
@@ -63,13 +75,22 @@ export async function signInWithGoogle(): Promise<{ error: string | null }> {
   if (!supabase) {
     return { error: 'Supabase não configurado neste ambiente.' };
   }
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: window.location.origin,
-    },
-  });
-  return { error: error ? error.message : null };
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+    if (error) {
+      authLogger.warn('Falha ao iniciar login Google OAuth', serializeError(error));
+    }
+    return { error: error ? error.message : null };
+  } catch (err) {
+    const serialized = serializeError(err);
+    authLogger.error('Exceção ao iniciar login Google OAuth', serialized);
+    return { error: serialized.message };
+  }
 }
 
 /**
@@ -77,5 +98,12 @@ export async function signInWithGoogle(): Promise<{ error: string | null }> {
  */
 export async function signOutUser(): Promise<void> {
   if (!supabase) return;
-  await supabase.auth.signOut();
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      authLogger.warn('Falha ao encerrar sessão Supabase', serializeError(error));
+    }
+  } catch (err) {
+    authLogger.error('Exceção ao encerrar sessão Supabase', serializeError(err));
+  }
 }
