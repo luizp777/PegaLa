@@ -139,7 +139,7 @@ export function ShoppingItemRow({
           transform: `translateX(${offsetX}px)`,
           transition: isSwiping ? 'none' : 'transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1)',
         }}
-        className={`relative flex min-h-[58px] items-center gap-1.5 px-2.5 py-1.5 ${
+        className={`group relative flex min-h-[58px] items-center gap-1.5 px-2.5 py-1.5 ${
           item.isChecked
             ? 'bg-zinc-50/90 dark:bg-zinc-950/70'
             : 'bg-white dark:bg-zinc-900'
@@ -174,9 +174,23 @@ export function ShoppingItemRow({
           </span>
         </button>
 
-        {/* Right Controls: Direct 44px Stepper + Category Sheet Trigger */}
+        {/* Right Controls: Direct 44px Stepper + Category Sheet Trigger + Desktop Hover Delete */}
         {!item.isChecked ? (
           <div className="flex shrink-0 items-center gap-0.5">
+            {/* Desktop hover delete button (mobile uses left swipe) */}
+            <button
+              type="button"
+              onClick={() => {
+                hapticWarning();
+                onDelete(item);
+              }}
+              className="hidden h-10 w-9 items-center justify-center rounded-xl text-zinc-400 opacity-0 transition hover:bg-red-50 hover:text-red-500 focus:opacity-100 group-hover:opacity-100 active:scale-95 dark:hover:bg-red-950/40 sm:flex"
+              aria-label={`Remover ${item.name}`}
+              title={`Remover ${item.name}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+
             {/* Category Picker Trigger */}
             <button
               type="button"
@@ -184,7 +198,7 @@ export function ShoppingItemRow({
                 hapticLight();
                 onOpenCategoryPicker(item);
               }}
-              className="flex h-10 w-8 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-zinc-100 active:scale-95 dark:hover:bg-zinc-800"
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-zinc-100 active:scale-95 dark:hover:bg-zinc-800"
               aria-label={`Trocar corredor de ${item.name}`}
               title={`Corredor: ${CATEGORY_MAP[item.categoryId]?.label ?? 'Outros'}`}
             >

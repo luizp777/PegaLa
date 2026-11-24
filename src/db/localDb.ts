@@ -197,6 +197,20 @@ export async function enqueueSync(
   listId: string,
   payload: Record<string, unknown>
 ): Promise<void> {
+  if (action === 'upsert_item' || action === 'upsert_list') {
+    await db.pendingSync
+      .where('listId')
+      .equals(listId)
+      .filter((m) => m.entityId === entityId && m.action === action)
+      .delete();
+  } else if (action === 'delete_item') {
+    await db.pendingSync
+      .where('listId')
+      .equals(listId)
+      .filter((m) => m.entityId === entityId && m.action === 'upsert_item')
+      .delete();
+  }
+
   await db.pendingSync.add({
     action,
     entityId,

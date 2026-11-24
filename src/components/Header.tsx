@@ -76,16 +76,28 @@ export function Header({
   pendingSyncCount,
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
+        setConfirmDeleteId(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenuOpen(false);
+        setConfirmDeleteId(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const totalCount = pendingCount + checkedCount;
@@ -98,7 +110,12 @@ export function Header({
         <div className="relative min-w-0 flex-1" ref={menuRef}>
           <button
             type="button"
-            onClick={() => setMenuOpen((o) => !o)}
+            onClick={() => {
+              setMenuOpen((o) => !o);
+              setConfirmDeleteId(null);
+            }}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
             className="flex min-h-[44px] max-w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition hover:bg-zinc-100 active:scale-[0.99] dark:hover:bg-zinc-900"
             aria-label="Trocar lista"
           >
@@ -183,20 +200,33 @@ export function Header({
                         </div>
                       </button>
                       {lists.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`Excluir a lista "${list.name}"?`)) {
+                        confirmDeleteId === list.id ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
                               onDeleteList(list.id);
+                              setConfirmDeleteId(null);
                               setMenuOpen(false);
-                            }
-                          }}
-                          className="ml-1 rounded-lg p-1.5 text-zinc-400 opacity-70 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                          aria-label={`Excluir ${list.name}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                            }}
+                            className="ml-1 shrink-0 rounded-lg bg-red-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-red-500 active:scale-95"
+                            aria-label={`Confirmar exclusão de ${list.name}`}
+                          >
+                            Confirmar?
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(list.id);
+                            }}
+                            className="ml-1 rounded-lg p-1.5 text-zinc-400 opacity-70 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            aria-label={`Excluir ${list.name}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )
                       )}
                     </div>
                   );

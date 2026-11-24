@@ -4,7 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@supabase/supabase-js';
 import type { ShoppingList } from '../types';
 import { isSupabaseConfigured, signInWithGoogle, signOutUser, supabase } from '../lib/supabase';
-import { joinSharedListByCode } from '../db/syncEngine';
+import { joinSharedListByCode, syncListNow } from '../db/syncEngine';
 
 /**
  * Propriedades do componente {@link ShareModal}.
@@ -37,10 +37,22 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
 
   useEffect(() => {
     if (!open || !supabase) return;
+    if (list) {
+      void syncListNow(list.id);
+    }
     void supabase.auth.getUser().then(({ data }) => {
       setUser(data.user && !data.user.is_anonymous ? data.user : null);
     });
-  }, [open]);
+  }, [open, list]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
 
   if (!open || !list) return null;
 
@@ -83,6 +95,9 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Compartilhar ${list.name}`}
         className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-zinc-900 sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >

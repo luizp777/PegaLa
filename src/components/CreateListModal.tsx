@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import type { ListType } from '../types';
 import { ListTypeIcon } from './ItemIcon';
@@ -31,6 +31,15 @@ export function CreateListModal({ open, onClose, onCreate }: CreateListModalProp
   const [name, setName] = useState('');
   const [type, setType] = useState<ListType>('mercado');
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,6 +57,9 @@ export function CreateListModal({ open, onClose, onCreate }: CreateListModalProp
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Nova Lista"
         className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-zinc-900 sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >

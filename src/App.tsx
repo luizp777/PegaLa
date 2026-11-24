@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutGrid, Mic, RotateCcw, ShoppingBag } from 'lucide-react';
 import {
   addItemsFromText,
@@ -21,11 +21,18 @@ import { hapticLight } from './lib/haptics';
 import { Header } from './components/Header';
 import { CategoryGroup } from './components/CategoryGroup';
 import { CheckedSection } from './components/CheckedSection';
-import { QuickAddBar } from './components/QuickAddBar';
-import { ShareModal } from './components/ShareModal';
-import { CreateListModal } from './components/CreateListModal';
-import { CategoryPickerSheet } from './components/CategoryPickerSheet';
+import { QuickAddBar, type QuickAddBarHandle } from './components/QuickAddBar';
 import type { CategoryId, ShoppingItem } from './types';
+
+const ShareModal = lazy(() =>
+  import('./components/ShareModal').then((m) => ({ default: m.ShareModal }))
+);
+const CreateListModal = lazy(() =>
+  import('./components/CreateListModal').then((m) => ({ default: m.CreateListModal }))
+);
+const CategoryPickerSheet = lazy(() =>
+  import('./components/CategoryPickerSheet').then((m) => ({ default: m.CategoryPickerSheet }))
+);
 
 /**
  * Estado da notificação toast temporária exibida no topo da tela.
@@ -72,6 +79,7 @@ export function App() {
     }
   });
   const lastAddedItemRef = useRef<ShoppingItem | null>(null);
+  const quickAddBarRef = useRef<QuickAddBarHandle>(null);
 
   const dismissSwipeHint = () => {
     setShowSwipeHint(false);
@@ -255,14 +263,22 @@ export function App() {
               Use a barra abaixo com uma mão só para montar sua compra em segundos:
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1.5 dark:bg-zinc-800">
+              <button
+                type="button"
+                onClick={() => quickAddBarRef.current?.openCatalog()}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-zinc-100 px-3.5 py-2 ring-1 ring-zinc-200/80 transition hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-500/40 active:scale-95 dark:bg-zinc-800 dark:ring-zinc-700/80 dark:hover:bg-emerald-950/60 dark:hover:text-emerald-300"
+              >
                 <LayoutGrid className="h-3.5 w-3.5 text-emerald-500" />
                 Toque no Catálogo Rápido
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1.5 dark:bg-zinc-800">
+              </button>
+              <button
+                type="button"
+                onClick={() => quickAddBarRef.current?.triggerVoice()}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-zinc-100 px-3.5 py-2 ring-1 ring-zinc-200/80 transition hover:bg-emerald-50 hover:text-emerald-700 hover:ring-emerald-500/40 active:scale-95 dark:bg-zinc-800 dark:ring-zinc-700/80 dark:hover:bg-emerald-950/60 dark:hover:text-emerald-300"
+              >
                 <Mic className="h-3.5 w-3.5 text-emerald-500" />
                 Fale os itens no microfone
-              </span>
+              </button>
             </div>
           </div>
         ) : (
@@ -298,7 +314,7 @@ export function App() {
             {/* All Done Banner when only checked items remain */}
             {pendingCount === 0 && checkedItems.length > 0 && (
               <div className="mb-4 rounded-2xl bg-emerald-50 px-4 py-3 text-center text-sm font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                🎉 Tudo pego! Seus itens continuam salvos abaixo para a próxima compra.
+                Tudo pego! Seus itens continuam salvos abaixo para a próxima compra.
               </div>
             )}
 
@@ -318,6 +334,7 @@ export function App() {
 
       {/* Thumb-Zone Bottom Dock (Catalog Drawer + List Tabs + Qty Pills + Voice + Paste + Input) */}
       <QuickAddBar
+        barRef={quickAddBarRef}
         lists={lists}
         activeList={activeList}
         onSelectList={selectList}
@@ -332,28 +349,36 @@ export function App() {
         onShowToast={(msg) => showToast(msg)}
       />
 
-      {/* Modals & Bottom Sheets */}
-      <CategoryPickerSheet
-        item={categoryPickerItem}
-        onSelectCategory={(item, catId) => void handleCategorySelected(item, catId)}
-        onClose={() => setCategoryPickerItem(null)}
-      />
+      {/* Modals & Bottom Sheets (lazy-loaded on demand) */}
+      <Suspense fallback={null}>
+        {categoryPickerItem && (
+          <CategoryPickerSheet
+            item={categoryPickerItem}
+            onSelectCategory={(item, catId) => void handleCategorySelected(item, catId)}
+            onClose={() => setCategoryPickerItem(null)}
+          />
+        )}
 
-      <ShareModal
-        open={shareOpen}
-        list={activeList}
-        onClose={() => setShareOpen(false)}
-        onJoinedList={(id) => {
-          selectList(id);
-          showToast('Lista compartilhada adicionada!');
-        }}
-      />
+        {shareOpen && (
+          <ShareModal
+            open={shareOpen}
+            list={activeList}
+            onClose={() => setShareOpen(false)}
+            onJoinedList={(id) => {
+              selectList(id);
+              showToast('Lista compartilhada adicionada!');
+            }}
+          />
+        )}
 
-      <CreateListModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreate={handleCreateList}
-      />
+        {createOpen && (
+          <CreateListModal
+            open={createOpen}
+            onClose={() => setCreateOpen(false)}
+            onCreate={handleCreateList}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

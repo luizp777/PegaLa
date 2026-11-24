@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { CategoryId, ShoppingItem } from '../types';
 import { CATEGORIES } from '../lib/dictionaryPtBr';
@@ -28,6 +29,15 @@ export function CategoryPickerSheet({
   onSelectCategory,
   onClose,
 }: CategoryPickerSheetProps) {
+  useEffect(() => {
+    if (!item) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [item, onClose]);
+
   if (!item) return null;
 
   return (
@@ -36,6 +46,9 @@ export function CategoryPickerSheet({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Corredor de ${item.name}`}
         className="w-full max-w-md rounded-t-3xl bg-white p-4 pb-safe shadow-2xl dark:bg-zinc-900 sm:rounded-3xl sm:p-5"
         onClick={(e) => e.stopPropagation()}
       >

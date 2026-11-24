@@ -101,6 +101,8 @@ $$;
 grant execute on function public.join_list_by_share_code(text) to anon, authenticated;
 
 -- 6. Habilitar Realtime para sincronização instantânea entre dispositivos
+-- REPLICA IDENTITY FULL garante que eventos DELETE incluam list_id para o filtro Realtime
+alter table public.list_items replica identity full;
 alter publication supabase_realtime add table public.lists;
 alter publication supabase_realtime add table public.list_items;
 
@@ -163,3 +165,11 @@ create policy "list_members_self_manage"
   for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- 9. Permissões explícitas para roles anon e authenticated (obrigatório no Supabase atual)
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.lists to anon, authenticated;
+grant select, insert, update, delete on public.list_items to anon, authenticated;
+grant select, insert, update, delete on public.list_members to anon, authenticated;
+grant execute on function public.is_list_member(uuid) to anon, authenticated;
+grant execute on function public.join_list_by_share_code(text) to anon, authenticated;

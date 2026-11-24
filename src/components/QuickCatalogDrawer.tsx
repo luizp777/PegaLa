@@ -207,7 +207,7 @@ export function QuickCatalogDrawer({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar entre 400+ itens de mercado e farmácia..."
+            placeholder="Buscar entre 370+ itens de mercado e farmácia..."
             aria-label="Buscar no catálogo"
             className="h-9 w-full rounded-xl border border-zinc-200 bg-white pl-8 pr-8 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
           />

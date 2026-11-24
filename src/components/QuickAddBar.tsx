@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import {
   Check,
   ClipboardPaste,
@@ -16,9 +16,21 @@ import { QuickCatalogDrawer } from './QuickCatalogDrawer';
 import { ItemIcon, ListTypeIcon } from './ItemIcon';
 
 /**
+ * Métodos imperativos expostos por {@link QuickAddBar} para atalhos externos (ex.: estado vazio da lista).
+ */
+export interface QuickAddBarHandle {
+  /** Abre o Catálogo Rápido na barra inferior. */
+  openCatalog: () => void;
+  /** Inicia ou alterna a captura de itens por voz (com feedback caso o navegador não suporte). */
+  triggerVoice: () => void;
+}
+
+/**
  * Propriedades do componente {@link QuickAddBar}.
  */
 interface QuickAddBarProps {
+  /** Referência imperativa opcional para acionar catálogo rápido ou microfone externamente. */
+  barRef?: Ref<QuickAddBarHandle>;
   /** Listas disponíveis para exibição nas abas inferiores da zona do polegar. */
   lists: ShoppingList[];
   /** Lista ativa no momento. */
@@ -66,6 +78,7 @@ const QUICK_QTY_PILLS: Array<{ label: string; prefix: string; qty: number; unit:
  * @returns Dock inferior renderizado.
  */
 export function QuickAddBar({
+  barRef,
   lists,
   activeList,
   onSelectList,
@@ -93,13 +106,31 @@ export function QuickAddBar({
         hapticSuccess();
         onShowToast(
           added.length === 1
-            ? `🎙️ "${added[0].name}" adicionado!`
-            : `🎙️ ${added.length} itens adicionados por voz!`
+            ? `"${added[0].name}" adicionado por voz!`
+            : `${added.length} itens adicionados por voz!`
         );
       }
     },
     (errorMsg) => onShowToast(errorMsg)
   );
+
+  useImperativeHandle(barRef, () => ({
+    openCatalog: () => {
+      hapticLight();
+      setCatalogOpen(true);
+      setIsFocused(false);
+    },
+    triggerVoice: () => {
+      hapticLight();
+      if (!voice.isSupported) {
+        onShowToast('Reconhecimento de voz não suportado neste navegador.');
+        inputRef.current?.focus();
+        return;
+      }
+      setCatalogOpen(false);
+      voice.toggleListening();
+    },
+  }));
 
   useEffect(() => {
     return () => {
@@ -211,8 +242,8 @@ export function QuickAddBar({
         hapticSuccess();
         onShowToast(
           added.length === 1
-            ? `📋 "${added[0].name}" colado!`
-            : `📋 ${added.length} itens colados da lista!`
+            ? `"${added[0].name}" colado!`
+            : `${added.length} itens colados da lista!`
         );
       }
     } catch {
@@ -328,6 +359,10 @@ export function QuickAddBar({
           <div className="no-scrollbar mb-2 flex items-center gap-1.5 overflow-x-auto pb-0.5">
             {lists.map((list) => {
               const isCurrent = list.id === activeList?.id;
+              const normName = normalizeText(list.name);
+              const hasDuplicateName =
+                lists.filter((other) => normalizeText(other.name) === normName).length > 1;
+              const shortCode = list.shareCode.replace(/^PEGA-/, '').slice(-4);
               return (
                 <button
                   key={list.id}
@@ -336,6 +371,7 @@ export function QuickAddBar({
                     hapticLight();
                     onSelectList(list.id);
                   }}
+                  title={hasDuplicateName ? `${list.name} (${list.shareCode})` : list.name}
                   className={`flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-bold transition active:scale-95 ${
                     isCurrent
                       ? 'bg-emerald-600 text-white shadow-xs'
@@ -344,6 +380,15 @@ export function QuickAddBar({
                 >
                   <ListTypeIcon type={list.type} className="h-3.5 w-3.5 shrink-0" />
                   <span className="max-w-[110px] truncate">{list.name}</span>
+                  {hasDuplicateName && (
+                    <span
+                      className={`font-mono text-[10px] font-semibold ${
+                        isCurrent ? 'text-emerald-100' : 'text-zinc-400 dark:text-zinc-500'
+                      }`}
+                    >
+                      · {shortCode}
+                    </span>
+                  )}
                 </button>
               );
             })}

@@ -182,8 +182,38 @@ export async function flushPendingSync(): Promise<boolean> {
   let allSucceeded = true;
   try {
     const user = await ensureSupabaseSession();
+    if (!user) return false;
+
+    // Seed any local-only lists (created before Supabase was configured) into the cloud first
+    const unsyncedLists = await db.lists.filter((l) => !l.isSynced).toArray();
+    for (const localList of unsyncedLists) {
+      const { error: listErr } = await supabase
+        .from('lists')
+        .upsert(toRemoteList(localList, user.id), { onConflict: 'id' });
+      if (!listErr) {
+        const localItems = await db.items.where('listId').equals(localList.id).toArray();
+        let itemsErr: PostgrestError | null = null;
+        if (localItems.length > 0) {
+          const res = await supabase
+            .from('list_items')
+            .upsert(localItems.map(toRemoteItem), { onConflict: 'id' });
+          itemsErr = res.error;
+        }
+        if (!itemsErr) {
+          await db.lists.update(localList.id, {
+            isSynced: true,
+            ownerId: localList.ownerId ?? user.id,
+          });
+        } else {
+          allSucceeded = false;
+        }
+      } else {
+        allSucceeded = false;
+      }
+    }
+
     const pending = await db.pendingSync.orderBy('id').toArray();
-    if (pending.length === 0) return true;
+    if (pending.length === 0) return allSucceeded;
 
     // Ensure list creation runs before item mutations for the same list
     pending.sort((a, b) => {
@@ -337,6 +367,12 @@ export async function pullListFromCloud(listId: string): Promise<void> {
   if (!isSupabaseConfigured || !supabase || !navigator.onLine) return;
 
   try {
+    const user = await ensureSupabaseSession();
+    if (!user) return;
+
+    const localList = await db.lists.get(listId);
+    if (!localList?.isSynced) return;
+
     const { data: itemRows, error } = await supabase
       .from('list_items')
       .select('*')
@@ -379,6 +415,49 @@ export async function pullListFromCloud(listId: string): Promise<void> {
 }
 
 /**
+ * Garante que uma lista local e todos os seus itens atuais estejam enviados ao Supabase
+ * (útil ao abrir o modal de compartilhamento ou recuperar listas criadas antes da nuvem).
+ *
+ * @param listId - UUID da lista a ser sincronizada imediatamente.
+ * @returns `true` se a lista e todos os seus itens foram enviados sem erro.
+ */
+export async function syncListNow(listId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !navigator.onLine) return false;
+
+  try {
+    const user = await ensureSupabaseSession();
+    if (!user) return false;
+
+    const localList = await db.lists.get(listId);
+    if (!localList) return false;
+
+    const canUpsertList = !localList.isSynced || !localList.ownerId || localList.ownerId === user.id;
+    if (canUpsertList) {
+      const { error: listErr } = await supabase
+        .from('lists')
+        .upsert(toRemoteList(localList, user.id), { onConflict: 'id' });
+      if (listErr) return false;
+    }
+
+    const localItems = await db.items.where('listId').equals(listId).toArray();
+    if (localItems.length > 0) {
+      const { error: itemsErr } = await supabase
+        .from('list_items')
+        .upsert(localItems.map(toRemoteItem), { onConflict: 'id' });
+      if (itemsErr) return false;
+    }
+
+    await db.lists.update(listId, {
+      isSynced: true,
+      ownerId: localList.ownerId ?? user.id,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Inscreve o aplicativo no canal Supabase Realtime da lista ativa para receber alterações de outros dispositivos em tempo real.
  *
  * @param listId - UUID da lista monitorada.
@@ -394,48 +473,73 @@ export function subscribeToListRealtime(listId: string): () => void {
     return () => {};
   }
 
-  // Push pending mutations and pull latest state
-  void flushPendingSync().then(() => pullListFromCloud(listId));
+  let cancelled = false;
 
-  activeChannel = supabase
-    .channel(`list-sync-${listId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'list_items',
-        filter: `list_id=eq.${listId}`,
-      },
-      async (payload) => {
-        if (payload.eventType === 'DELETE') {
-          const oldRow = payload.old as { id?: string };
-          if (oldRow?.id) {
-            await db.items.delete(oldRow.id);
-          }
-        } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const row = payload.new as RemoteItemRow;
-          if (!row?.id) return;
+  void (async () => {
+    const user = await ensureSupabaseSession();
+    if (!user || cancelled || !supabase) return;
 
-          // Guard against overwriting an unsynced local mutation or newer local edit
-          const hasPending = await db.pendingSync
-            .where('listId')
-            .equals(listId)
-            .filter((m) => m.entityId === row.id)
-            .count();
-          if (hasPending > 0) return;
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      await supabase.realtime.setAuth(session.access_token);
+    }
 
-          const remoteItem = fromRemoteItem(row);
-          const local = await db.items.get(row.id);
-          if (!local || new Date(remoteItem.updatedAt) >= new Date(local.updatedAt)) {
-            await db.items.put(remoteItem);
+    if (cancelled) return;
+
+    // Push pending mutations and pull latest state before opening the live channel
+    await flushPendingSync();
+    await pullListFromCloud(listId);
+
+    if (cancelled || !supabase) return;
+
+    if (activeChannel) {
+      supabase.removeChannel(activeChannel);
+      activeChannel = null;
+    }
+
+    activeChannel = supabase
+      .channel(`list-sync-${listId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'list_items',
+          filter: `list_id=eq.${listId}`,
+        },
+        async (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const oldRow = payload.old as { id?: string };
+            if (oldRow?.id) {
+              await db.items.delete(oldRow.id);
+            }
+          } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const row = payload.new as RemoteItemRow;
+            if (!row?.id) return;
+
+            // Guard against overwriting an unsynced local mutation or newer local edit
+            const hasPending = await db.pendingSync
+              .where('listId')
+              .equals(listId)
+              .filter((m) => m.entityId === row.id)
+              .count();
+            if (hasPending > 0) return;
+
+            const remoteItem = fromRemoteItem(row);
+            const local = await db.items.get(row.id);
+            if (!local || new Date(remoteItem.updatedAt) >= new Date(local.updatedAt)) {
+              await db.items.put(remoteItem);
+            }
           }
         }
-      }
-    )
-    .subscribe();
+      )
+      .subscribe();
+  })();
 
   return () => {
+    cancelled = true;
     if (activeChannel && supabase) {
       supabase.removeChannel(activeChannel);
       activeChannel = null;
