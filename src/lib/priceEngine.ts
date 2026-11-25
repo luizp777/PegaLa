@@ -5,7 +5,7 @@ import type {
   PriceQuoteCandidate,
   PriceSource,
 } from '../../shared/priceTypes';
-import type { ShoppingItem } from '../types';
+import type { CategoryId, ShoppingItem } from '../types';
 import { normalizeText } from './dictionaryPtBr';
 
 export { parsePackFromTitle, type ParsedPack };
@@ -105,6 +105,54 @@ const NEGATIVE_GUARD_RULES: Array<{ trigger: string; forbidden: string[] }> = [
   },
 ];
 
+const CATEGORY_FORBIDDEN_TOKENS: Partial<Record<CategoryId, string[]>> = {
+  hortifruti: [
+    'suco',
+    'refresco',
+    'nectar',
+    'em po',
+    'sabor',
+    'refrigerante',
+    'bala',
+    'chiclete',
+    'biscoito',
+    'bolacha',
+    'bolo',
+    'gelatina',
+    'iogurte',
+    'sobremesa',
+    'pudim',
+    'sorvete',
+    'gelato',
+    'sabonete',
+    'shampoo',
+    'condicionador',
+    'detergente',
+    'desinfetante',
+    'amaciante',
+    'essencia',
+    'aromatizante',
+    'extrato',
+    'molho',
+    'ketchup',
+    'catchup',
+    'polpa',
+    'caldo',
+    'tempero',
+    'chips',
+  ],
+  acougue: [
+    'caldo',
+    'tempero',
+    'miojo',
+    'macarrao',
+    'salgadinho',
+    'sabor',
+    'racao',
+    'petisco',
+  ],
+};
+
 const STOP_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'para', 'e', 'em', 'c']);
 
 function toBaseUnit(quantity: number, unit: string): { value: number; family: 'mass' | 'vol' | 'unit' } {
@@ -168,12 +216,28 @@ function tokenize(text: string): string[] {
  *
  * @param normalizedTerm - Termo normalizado da lista.
  * @param productTitle - Título do produto retornado pela loja.
+ * @param categoryId - Categoria opcional do item para evitar falsos positivos (ex.: refresco em pó para fruta).
  * @returns Score de 0 a 1 (valores `< 0.45` devem ser descartados).
  */
-export function scoreCandidateMatch(normalizedTerm: string, productTitle: string): number {
+export function scoreCandidateMatch(
+  normalizedTerm: string,
+  productTitle: string,
+  categoryId?: CategoryId
+): number {
   const normTerm = normalizeText(normalizedTerm);
   const normTitle = normalizeText(productTitle);
   if (!normTerm || !normTitle) return 0;
+
+  if (categoryId) {
+    const catForbidden = CATEGORY_FORBIDDEN_TOKENS[categoryId];
+    if (catForbidden) {
+      for (const bad of catForbidden) {
+        if (!normTerm.includes(bad) && normTitle.includes(bad)) {
+          return 0;
+        }
+      }
+    }
+  }
 
   for (const rule of NEGATIVE_GUARD_RULES) {
     if (normTerm.includes(rule.trigger)) {
@@ -266,7 +330,9 @@ function selectCandidatesForStore(
   const scored = pool
     .map((candidate) => {
       const isCommunity = candidate.source !== 'online';
-      const score = isCommunity ? 1.0 : scoreCandidateMatch(item.normalizedName, candidate.productTitle);
+      const score = isCommunity
+        ? 1.0
+        : scoreCandidateMatch(item.normalizedName, candidate.productTitle, item.categoryId);
       if (score < 0.45) return null;
 
       const parsedPack =

@@ -81,9 +81,12 @@ describe('parsePackFromTitle & computePacksNeeded', () => {
 });
 
 describe('scoreCandidateMatch', () => {
-  it('rejeita falsos positivos por termos negativos', () => {
+  it('rejeita falsos positivos por termos negativos e categoria (ex.: refresco/suco para fruta)', () => {
     expect(scoreCandidateMatch('leite integral', 'Leite Condensado Moça 395g')).toBe(0);
     expect(scoreCandidateMatch('leite', 'Sabonete Nivea Leite 85g')).toBe(0);
+    expect(scoreCandidateMatch('laranja', 'Refresco em Pó Frisco Sabor Laranja com Acerola 18g', 'hortifruti')).toBe(0);
+    expect(scoreCandidateMatch('laranja', 'Suco de Laranja Integral 1L', 'hortifruti')).toBe(0);
+    expect(scoreCandidateMatch('laranja', 'Laranja Pera 1kg', 'hortifruti')).toBeGreaterThan(0.7);
     expect(scoreCandidateMatch('leite integral', 'Leite Longa Vida Integral Jussara 1L')).toBeGreaterThan(0.7);
   });
 });
