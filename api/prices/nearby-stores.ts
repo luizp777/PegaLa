@@ -2,6 +2,7 @@ import type { NearbyStore, StoreType } from '../../shared/priceTypes.js';
 import { encodeGeohash, haversineKm, roundCoord } from './_shared/geohash.js';
 import {
   authenticateRequest,
+  buildSupabaseServiceHeaders,
   checkRateLimit,
   getSupabaseServerConfig,
   hashClientIp,
@@ -414,11 +415,7 @@ export default {
       return jsonResponse({ error: 'Supabase não configurado no servidor.' }, 503);
     }
 
-    const sbHeaders = {
-      apikey: cfg.serviceKey,
-      Authorization: `Bearer ${cfg.serviceKey}`,
-      'Content-Type': 'application/json',
-    };
+    const sbHeaders = buildSupabaseServiceHeaders(cfg.serviceKey);
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600_000).toISOString();
     const typesFilter = types.map((t) => `"${t}"`).join(',');
@@ -466,6 +463,22 @@ export default {
         });
         if (upsertRes.ok) {
           storeRows = (await upsertRes.json()) as StoreRow[];
+        } else {
+          console.warn('[PegaLa:NearbyStores] Falha ao salvar stores no Supabase', upsertRes.status);
+          // Ainda devolve as lojas descobertas para não deixar o usuário sem resposta
+          storeRows = payload.map((p, idx) => ({
+            id: `temp-${idx}-${p.osm_id}`,
+            osm_id: p.osm_id,
+            name: p.name,
+            chain_slug: p.chain_slug,
+            store_type: p.store_type,
+            lat: p.lat,
+            lng: p.lng,
+            cep: p.cep,
+            city: p.city,
+            neighborhood: p.neighborhood,
+            fetched_at: p.fetched_at,
+          }));
         }
       }
     }

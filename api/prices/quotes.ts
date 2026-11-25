@@ -2,6 +2,7 @@ import type { PriceQuoteCandidate, QuotesStreamEvent, QuoteTermInput } from '../
 import { getEnabledAdapters } from './_adapters/index.js';
 import {
   authenticateRequest,
+  buildSupabaseServiceHeaders,
   checkRateLimit,
   getSupabaseServerConfig,
   hashClientIp,
@@ -141,11 +142,7 @@ export default {
       return jsonResponse({ error: 'Supabase não configurado no servidor.' }, 503);
     }
 
-    const sbHeaders = {
-      apikey: cfg.serviceKey,
-      Authorization: `Bearer ${cfg.serviceKey}`,
-      'Content-Type': 'application/json',
-    };
+    const sbHeaders = buildSupabaseServiceHeaders(cfg.serviceKey);
 
     const adapters = getEnabledAdapters(requestedChains);
     const uniqueTerms = [...new Set(terms.map((t) => t.normalizedTerm.trim().toLowerCase()).filter(Boolean))];

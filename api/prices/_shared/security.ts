@@ -33,6 +33,21 @@ export function getSupabaseServerConfig(): { url: string; serviceKey: string } |
 }
 
 /**
+ * Monta cabeçalhos compatíveis com chaves `sb_secret_...` (apenas `apikey`)
+ * e chaves legadas JWT `eyJ...` (`apikey` + `Authorization: Bearer`).
+ */
+export function buildSupabaseServiceHeaders(serviceKey: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    apikey: serviceKey,
+    'Content-Type': 'application/json',
+  };
+  if (serviceKey.startsWith('eyJ')) {
+    headers.Authorization = `Bearer ${serviceKey}`;
+  }
+  return headers;
+}
+
+/**
  * Valida JWT do usuário no Supabase Auth e retorna o `userId` autenticado.
  */
 export async function authenticateRequest(req: Request): Promise<string | null> {
@@ -79,11 +94,7 @@ export async function checkRateLimit(bucketKey: string, maxPerHour: number): Pro
   try {
     const res = await fetch(`${cfg.url}/rest/v1/rpc/check_price_api_rate_limit`, {
       method: 'POST',
-      headers: {
-        apikey: cfg.serviceKey,
-        Authorization: `Bearer ${cfg.serviceKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers: buildSupabaseServiceHeaders(cfg.serviceKey),
       body: JSON.stringify({
         p_bucket_key: bucketKey,
         p_max_per_hour: maxPerHour,
