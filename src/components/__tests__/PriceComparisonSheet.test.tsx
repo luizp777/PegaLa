@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ShoppingItem } from '../../types';
+import { PinnedStoreBar } from '../PinnedStoreBar';
 import { PriceComparisonSheet } from '../PriceComparisonSheet';
 
 afterEach(() => {
@@ -158,8 +159,9 @@ describe('PriceComparisonSheet', () => {
     expect(mockReportPrice).toHaveBeenCalled();
   });
 
-  it('permite recolher o card #1 e ativar Estou comprando aqui', () => {
+  it('permite recolher o card #1 e fixar estabelecimento com Escolher esta loja', () => {
     const onSelectStore = vi.fn();
+    const onClose = vi.fn();
     render(
       <PriceComparisonSheet
         open={true}
@@ -170,16 +172,22 @@ describe('PriceComparisonSheet', () => {
         checkedItems={[]}
         activeShoppingStore={null}
         onSelectShoppingStore={onSelectStore}
-        onClose={vi.fn()}
+        onClose={onClose}
         onShowToast={vi.fn()}
       />
     );
 
-    fireEvent.click(screen.getByText('Estou comprando aqui'));
-    expect(onSelectStore).toHaveBeenCalledWith({
-      id: '11111111-1111-4111-8111-111111111111',
-      name: 'Mambo',
-    });
+    fireEvent.click(screen.getByText('Escolher esta loja'));
+    expect(onSelectStore).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Mambo',
+        lat: -23.5,
+        lng: -46.6,
+        fallbackTotalCents: 996,
+      })
+    );
+    expect(onClose).toHaveBeenCalled();
 
     fireEvent.click(screen.getByText('Mambo'));
     expect(screen.queryByText('Trocar marca')).not.toBeInTheDocument();
@@ -201,5 +209,50 @@ describe('PriceComparisonSheet', () => {
 
     fireEvent.click(screen.getByText('Dividir em 2 lojas'));
     expect(screen.getByText(/Dividir a compra em duas lojas não gera economia relevante/)).toBeInTheDocument();
+  });
+});
+
+describe('PinnedStoreBar', () => {
+  it('exibe total estimado, subtotal no carrinho, link Leve-me lá e ações', () => {
+    const onOpenComparator = vi.fn();
+    const onUnpin = vi.fn();
+    render(
+      <PinnedStoreBar
+        store={{
+          id: '11111111-1111-4111-8111-111111111111',
+          name: 'Confiança Max',
+          chainSlug: 'confianca',
+          lat: -22.3245,
+          lng: -49.0712,
+          distanceKm: 2.79,
+          fallbackTotalCents: 1054,
+          fallbackMatchedCount: 2,
+          fallbackTotalItems: 2,
+          pinnedAt: '2026-11-24T23:00:00.000Z',
+        }}
+        summary={{
+          estimatedTotalCents: 1054,
+          inCartTotalCents: 420,
+          matchedCount: 2,
+          totalItems: 2,
+          hasEstimatedMissing: false,
+        }}
+        onOpenComparator={onOpenComparator}
+        onUnpin={onUnpin}
+      />
+    );
+
+    expect(screen.getByText('Confiança Max')).toBeInTheDocument();
+    expect(screen.getByText(/10,54/)).toBeInTheDocument();
+    expect(screen.getByText(/No carrinho:/)).toBeInTheDocument();
+
+    const navLink = screen.getByRole('link', { name: /Leve-me lá/i });
+    expect(navLink).toHaveAttribute('href', expect.stringContaining('-22.3245,-49.0712'));
+
+    fireEvent.click(screen.getByLabelText('Trocar estabelecimento'));
+    expect(onOpenComparator).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('Desafixar estabelecimento'));
+    expect(onUnpin).toHaveBeenCalled();
   });
 });

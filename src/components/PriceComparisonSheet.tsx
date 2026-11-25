@@ -15,7 +15,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import { isPersistedStoreId } from '../../shared/priceTypes';
+import { isPersistedStoreId, type PinnedStoreSelection } from '../../shared/priceTypes';
 import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import { usePriceComparison } from '../hooks/usePriceComparison';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
@@ -38,10 +38,10 @@ interface PriceComparisonSheetProps {
   pendingItems: ShoppingItem[];
   /** Itens já marcados ("No carrinho"). */
   checkedItems: ShoppingItem[];
-  /** Loja selecionada na sessão como "Estou comprando aqui". */
-  activeShoppingStore?: { id: string; name: string } | null;
-  /** Atualiza a loja selecionada na sessão para captura rápida ao marcar itens. */
-  onSelectShoppingStore?: (store: { id: string; name: string } | null) => void;
+  /** Loja fixada na lista ativa ("Escolher esta loja"). */
+  activeShoppingStore?: PinnedStoreSelection | null;
+  /** Atualiza ou desafixa a loja selecionada na lista ativa. */
+  onSelectShoppingStore?: (store: PinnedStoreSelection | null) => void;
   /** Callback para fechar a folha. */
   onClose: () => void;
   /** Callback para exibir feedback toast no app. */
@@ -531,35 +531,46 @@ export function PriceComparisonSheet({
 
                       {isExpanded && (
                         <div className="divide-y divide-zinc-100 border-t border-zinc-200/70 bg-white px-3.5 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-                          {onSelectShoppingStore && canContribute && (
+                          {onSelectShoppingStore && (
                             <div className="flex items-center justify-between gap-2 py-2.5">
                               <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
                                 {isShoppingHere
-                                  ? 'Captura rápida + Preço ativada ao marcar itens'
-                                  : 'Está comprando nesta loja agora?'}
+                                  ? 'Fixada na lista • toque para desafixar'
+                                  : 'Ir comprar neste estabelecimento?'}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => {
                                   hapticLight();
-                                  onSelectShoppingStore(
-                                    isShoppingHere
-                                      ? null
-                                      : { id: entry.store.id, name: entry.store.name }
-                                  );
-                                  onShowToast(
-                                    isShoppingHere
-                                      ? 'Modo loja física desativado.'
-                                      : `Comprando em ${entry.store.name}: ao marcar um item você poderá informar o preço.`
-                                  );
+                                  if (isShoppingHere) {
+                                    onSelectShoppingStore(null);
+                                    onShowToast('Estabelecimento desafixado da lista.');
+                                  } else {
+                                    onSelectShoppingStore({
+                                      id: entry.store.id,
+                                      name: entry.store.name,
+                                      chainSlug: entry.store.chainSlug,
+                                      lat: entry.store.lat,
+                                      lng: entry.store.lng,
+                                      distanceKm: entry.store.distanceKm,
+                                      neighborhood: entry.store.neighborhood ?? null,
+                                      city: entry.store.city ?? null,
+                                      fallbackTotalCents: entry.estimatedFullTotalCents,
+                                      fallbackMatchedCount: entry.matchedCount,
+                                      fallbackTotalItems: entry.totalItems,
+                                      pinnedAt: new Date().toISOString(),
+                                    });
+                                    onShowToast(`${entry.store.name} fixada na sua lista!`);
+                                    onClose();
+                                  }
                                 }}
-                                className={`min-h-[38px] shrink-0 rounded-lg px-2.5 text-[11px] font-bold transition active:scale-95 ${
+                                className={`min-h-[38px] shrink-0 rounded-lg px-3 text-[11px] font-bold transition active:scale-95 ${
                                   isShoppingHere
                                     ? 'bg-emerald-600 text-white'
                                     : 'bg-zinc-100 text-zinc-700 hover:bg-emerald-50 hover:text-emerald-700 dark:bg-zinc-800 dark:text-zinc-300'
                                 }`}
                               >
-                                {isShoppingHere ? 'Comprando aqui ✓' : 'Estou comprando aqui'}
+                                {isShoppingHere ? 'Loja escolhida ✓' : 'Escolher esta loja'}
                               </button>
                             </div>
                           )}

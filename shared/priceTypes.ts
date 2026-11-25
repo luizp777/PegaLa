@@ -106,6 +106,24 @@ export function isPersistedStoreId(id: string | null | undefined): boolean {
 }
 
 /**
+ * Estabelecimento fixado na página da lista após a comparação de preços.
+ */
+export interface PinnedStoreSelection {
+  id: string;
+  name: string;
+  chainSlug: string | null;
+  lat: number;
+  lng: number;
+  distanceKm: number;
+  neighborhood?: string | null;
+  city?: string | null;
+  fallbackTotalCents: number;
+  fallbackMatchedCount: number;
+  fallbackTotalItems: number;
+  pinnedAt: string;
+}
+
+/**
  * Snapshot bruto da última comparação salva no IndexedDB para uso offline.
  */
 export interface CachedPriceComparison {

@@ -18,8 +18,10 @@ import {
 } from './db/localDb';
 import { flushPendingSync } from './db/syncEngine';
 import { useActiveList } from './hooks/useActiveList';
+import { usePinnedStore } from './hooks/usePinnedStore';
 import { usePwaInstall } from './hooks/usePwaInstall';
 import { useTheme } from './hooks/useTheme';
+import { isPersistedStoreId } from '../shared/priceTypes';
 import { normalizeText } from './lib/dictionaryPtBr';
 import { buildDiagnosticsReport } from './lib/diagnostics';
 import { isSpeechRecognitionSupported } from './lib/speechParser';
@@ -28,6 +30,7 @@ import { useWakeLock } from './lib/wakeLock';
 import { hapticLight } from './lib/haptics';
 import { ActiveListToolbar } from './components/ActiveListToolbar';
 import { Header } from './components/Header';
+import { PinnedStoreBar } from './components/PinnedStoreBar';
 import { CategoryGroup } from './components/CategoryGroup';
 import { CheckedSection } from './components/CheckedSection';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
@@ -122,7 +125,6 @@ export function App() {
   const [shareOpen, setShareOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [priceCompareOpen, setPriceCompareOpen] = useState(false);
-  const [activeShoppingStore, setActiveShoppingStore] = useState<{ id: string; name: string } | null>(null);
   const [quickPriceItem, setQuickPriceItem] = useState<ShoppingItem | null>(null);
   const [quickPriceValue, setQuickPriceValue] = useState('');
   const [categoryPickerItem, setCategoryPickerItem] = useState<ShoppingItem | null>(null);
@@ -308,20 +310,27 @@ export function App() {
     }
   }, [showToast]);
 
+  const pendingItems = useMemo(() => groupedPending.flatMap((g) => g.items), [groupedPending]);
+  const { pinnedStore, summary: pinnedSummary, pinStore, unpinStore } = usePinnedStore({
+    listId: activeList?.id,
+    pendingItems,
+    checkedItems,
+  });
+
   const handleToggleItem = useCallback(
     (item: ShoppingItem) => {
       const markingAsChecked = !item.isChecked;
       void toggleItemChecked(item);
-      if (markingAsChecked && activeShoppingStore && isSupabaseConfigured) {
+      if (markingAsChecked && pinnedStore && isPersistedStoreId(pinnedStore.id) && isSupabaseConfigured) {
         showToast(`${item.name} no carrinho`, undefined, item);
       }
     },
-    [activeShoppingStore, showToast]
+    [pinnedStore, showToast]
   );
 
   const handleSaveQuickPrice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quickPriceItem || !activeShoppingStore || !supabase) return;
+    if (!quickPriceItem || !pinnedStore || !supabase) return;
     const val = Number(quickPriceValue.replace(',', '.'));
     if (!Number.isFinite(val) || val < 0.1) {
       showToast('Informe um preço válido (ex.: 5,49).');
@@ -329,7 +338,7 @@ export function App() {
     }
     await ensureSupabaseSession();
     const { error } = await supabase.rpc('report_community_price', {
-      p_store_id: activeShoppingStore.id,
+      p_store_id: pinnedStore.id,
       p_normalized_term: quickPriceItem.normalizedName,
       p_product_title: quickPriceItem.name,
       p_pack_quantity: 1,
@@ -338,7 +347,7 @@ export function App() {
     });
     setQuickPriceItem(null);
     setQuickPriceValue('');
-    showToast(error ? error.message : `Preço salvo em ${activeShoppingStore.name}!`);
+    showToast(error ? error.message : `Preço salvo em ${pinnedStore.name}!`);
   };
 
   const handleIncrementItem = useCallback((item: ShoppingItem) => {
@@ -459,32 +468,40 @@ export function App() {
     );
   };
 
-  const pendingItems = useMemo(() => groupedPending.flatMap((g) => g.items), [groupedPending]);
-
   return (
     <div className="min-h-dvh bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-      <Header
-        lists={lists}
-        activeList={activeList}
-        pendingCount={pendingCount}
-        checkedCount={checkedItems.length}
-        onSelectList={selectList}
-        onRenameList={(id, newName) => void handleRenameList(id, newName)}
-        onOpenCreateList={() => setCreateOpen(true)}
-        onDeleteList={handleDeleteList}
-        onLeaveList={handleLeaveList}
-        onOpenShare={() => setShareOpen(true)}
-        isDark={isDark}
-        onToggleTheme={toggleTheme}
-        wakeLockSupported={wakeLock.isSupported}
-        wakeLockActive={wakeLock.isActive}
-        onToggleWakeLock={wakeLock.toggleWakeLock}
-        isOnline={isOnline}
-        pendingSyncCount={pendingSyncCount}
-        isSyncing={isSyncing}
-        onForceSync={() => void handleForceSync()}
-        onCopyDiagnostics={() => void handleCopyDiagnostics()}
-      />
+      <div className="sticky top-0 z-30">
+        <Header
+          lists={lists}
+          activeList={activeList}
+          pendingCount={pendingCount}
+          checkedCount={checkedItems.length}
+          onSelectList={selectList}
+          onRenameList={(id, newName) => void handleRenameList(id, newName)}
+          onOpenCreateList={() => setCreateOpen(true)}
+          onDeleteList={handleDeleteList}
+          onLeaveList={handleLeaveList}
+          onOpenShare={() => setShareOpen(true)}
+          isDark={isDark}
+          onToggleTheme={toggleTheme}
+          wakeLockSupported={wakeLock.isSupported}
+          wakeLockActive={wakeLock.isActive}
+          onToggleWakeLock={wakeLock.toggleWakeLock}
+          isOnline={isOnline}
+          pendingSyncCount={pendingSyncCount}
+          isSyncing={isSyncing}
+          onForceSync={() => void handleForceSync()}
+          onCopyDiagnostics={() => void handleCopyDiagnostics()}
+        />
+        {pinnedStore && pinnedSummary && (
+          <PinnedStoreBar
+            store={pinnedStore}
+            summary={pinnedSummary}
+            onOpenComparator={() => setPriceCompareOpen(true)}
+            onUnpin={unpinStore}
+          />
+        )}
+      </div>
 
       {/* Toast Notification with Optional Undo Action */}
       {activeToast && (
@@ -522,7 +539,7 @@ export function App() {
         </div>
       )}
 
-      {quickPriceItem && activeShoppingStore && (
+      {quickPriceItem && pinnedStore && (
         <div className="fixed inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-40 flex justify-center px-4">
           <form
             onSubmit={(e) => void handleSaveQuickPrice(e)}
@@ -532,7 +549,7 @@ export function App() {
             className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-emerald-500/30 bg-white p-2.5 shadow-xl dark:bg-zinc-900"
           >
             <span className="min-w-0 flex-1 truncate text-xs font-bold text-zinc-700 dark:text-zinc-200">
-              {quickPriceItem.name} (1 {quickPriceItem.unit || 'un'}) • {activeShoppingStore.name}:
+              {quickPriceItem.name} (1 {quickPriceItem.unit || 'un'}) • {pinnedStore.name}:
             </span>
             <input
               type="text"
@@ -670,7 +687,7 @@ export function App() {
               onSelectCategory={setSelectedCategory}
               allCollapsed={allCollapsed}
               onToggleAllCollapsed={handleToggleAllCollapsed}
-              canComparePrices={isSupabaseConfigured && (pendingCount > 0 || checkedItems.length > 0)}
+              canComparePrices={isSupabaseConfigured && !pinnedStore && (pendingCount > 0 || checkedItems.length > 0)}
               onOpenPriceComparison={() => setPriceCompareOpen(true)}
             />
 
@@ -785,8 +802,8 @@ export function App() {
             listType={activeList.type}
             pendingItems={pendingItems}
             checkedItems={checkedItems}
-            activeShoppingStore={activeShoppingStore}
-            onSelectShoppingStore={setActiveShoppingStore}
+            activeShoppingStore={pinnedStore}
+            onSelectShoppingStore={(s) => (s ? pinStore(s) : unpinStore())}
             onClose={() => setPriceCompareOpen(false)}
             onShowToast={(msg) => showToast(msg)}
           />
