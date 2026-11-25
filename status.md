@@ -2,6 +2,56 @@
 
 ---
 
+## Ciclo 9 — Comparador de Preços em Mercados e Farmácias Próximos (Fase 0 + Fase 1 + Reviews)
+
+> **Status**: Concluído (Fase 0, Fase 1, Code Review e Design Review concluídos)
+> **Data de conclusão**: 2026-11-24
+
+### Fase 0 — Spike de Viabilidade dos Conectores
+- [x] **C9-00. Validação técnica e de bloqueio anti-bot**: 10 redes aprovadas (Mambo, Oba Hortifruti, Swift, Sam's Club, Confiança, Tauste, Jaú Serve, Drogaria São Paulo, Drogarias Pacheco e Pague Menos); Carrefour descartado por Cloudflare `503`.
+
+### Fase 1 — Infraestrutura, Motor de Cálculo, APIs & UX
+- [x] **C9-01. Tipos compartilhados, parser único e IndexedDB v4** (`shared/priceTypes.ts`, `shared/packParser.ts`, `src/db/localDb.ts`, `vercel.json`, `.env.example`).
+- [x] **C9-02. Migration Supabase, RLS, Views e RPCs seguras** (`supabase/migrations/20261125000000_price_comparison.sql`: `stores`, `store_prices`, `store_prices_public` com `security_invoker`, `report_community_price`, `upsert_online_prices`, `check_price_api_rate_limit`).
+- [x] **C9-03. Motor de matching, normalização e ranking no cliente** (`src/lib/priceEngine.ts`, `src/lib/__tests__/priceEngine.test.ts`).
+- [x] **C9-04. Endpoints Vercel (`/api/prices/nearby-stores`, `/api/prices/quotes`) e adaptadores plugáveis** (`api/prices/_shared/*`, `api/prices/_adapters/*`, `src/lib/__tests__/adaptersContract.test.ts`).
+- [x] **C9-05. Hook, Bottom Sheet lazy-loaded e integração na lista** (`src/hooks/usePriceComparison.ts`, `src/components/PriceComparisonSheet.tsx`, `ActiveListToolbar.tsx`, `App.tsx`, `scripts/check-bundle-budget.mjs`).
+
+### Code Review & Design Review (Hardening + UX Mobile/iOS)
+- [x] **C9-06. Hardening de deploy, SQL, GraphQL e lógica de preços**: pasta `_adapters/` ignorada como rota pela Vercel, upsert online via RPC, query GraphQL parametrizada no Tauste, sanitização de filtros PostgREST, bounding box no cache de lojas, soma de pesos `0.5 + 0.5 >= 1.0`, embalagem unitária correta no `reportManualPrice` e persistência offline após contribuição.
+- [x] **C9-07. Polimento de UX, acessibilidade WCAG AA e iOS PWA**: dock fixo para troca de marca/ajuste de preço, alvos de toque ≥ 32px, `safe-area-inset-bottom`, contraste AA, card `#1` unificado e recolhível, skeletons, estado vazio acionável, modo *"Estou comprando aqui"* com captura rápida `+ Preço` e feedback háptico.
+- [x] **C9-08. Testes unitários, cobertura, bundle budget e E2E Playwright** (`priceEngine.test.ts`, `adaptersContract.test.ts`, `usePriceComparison.test.ts`, `PriceComparisonSheet.test.tsx`, `e2e/price-comparison.spec.ts`).
+
+---
+
+## Ciclo 8 — Qualidade, Engenharia e Infraestrutura (CI/CD, E2E, Cobertura, Observabilidade & Migrations)
+
+> **Status**: Concluído (5 fases concluídas)
+> **Data de conclusão**: 2026-11-24
+
+### Fase 1 — Fundação, CI/CD Esqueleto, Hooks & Correção `?list=`
+- [x] **C8-01. Padronização Node (`>= 22`) e hooks locais** (`.nvmrc`, `package.json`, `.husky/pre-commit`, `.husky/pre-push`, `.github/dependabot.yml`).
+- [x] **C8-02. Correção dos atalhos PWA `?list=mercado|farmacia|geral`** (`src/hooks/useActiveList.ts`).
+
+### Fase 2 — Cobertura & Expansão de Testes (Vitest)
+- [x] **C8-03. Cobertura com `@vitest/coverage-v8` e ratchet de thresholds** (`vite.config.ts`, `package.json`).
+- [x] **C8-04. Novas suítes para hooks e módulos críticos** (`useActiveList.test.ts`, `useTheme.test.ts`, `usePwaInstall.test.ts`, `wakeLock.test.ts`, `logger.test.ts`, expansão de `uiComponents.test.tsx`).
+
+### Fase 3 — Observabilidade Privada (Compatível com CSP)
+- [x] **C8-05. Buffer circular (50 eventos) e sanitizador único sem PII** (`src/lib/logger.ts`).
+- [x] **C8-06. Core Web Vitals lazy e relatório "Copiar diagnóstico" no Header** (`src/lib/webVitals.ts`, `src/lib/diagnostics.ts`, `Header.tsx`, `App.tsx`, `main.tsx`).
+- [x] **C8-07. Endpoint same-origin opcional `/api/logs` na Vercel** (`api/logs.ts`, `tsconfig.api.json`, `vercel.json`, `eslint.config.js`).
+
+### Fase 4 — Testes E2E com Playwright
+- [x] **C8-08. Configuração multi-dispositivo e suíte E2E** (`playwright.config.ts`, `e2e/core-shopping.spec.ts`, `e2e/mobile-a11y.spec.ts`, `e2e/offline-pwa.spec.ts`, `e2e/sync-mocked.spec.ts`).
+
+### Fase 5 — Bundle Budget, Migrations Supabase & CI Completo
+- [x] **C8-09. Budget de bundle gzip automatizado** (`scripts/check-bundle-budget.mjs`, `package.json`).
+- [x] **C8-10. Migrations versionadas no padrão Supabase CLI** (`supabase/config.toml`, `supabase/migrations/20261124000000_baseline.sql`, remoção de `supabase/schema.sql`).
+- [x] **C8-11. Pipeline em 2 estágios no GitHub Actions** (`.github/workflows/ci.yml`: `quality` + `e2e`).
+
+---
+
 ## Ciclo 7 — Code Review Geral (Foco em Modais, Integridade de Sync/Realtime, Hardening SQL & UX)
 
 > **Status**: Concluído (10/10 concluídos)

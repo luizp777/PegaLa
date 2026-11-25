@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import {
+  Activity,
   Check,
   ChevronDown,
   Lock,
@@ -63,6 +64,8 @@ interface HeaderProps {
   isSyncing?: boolean;
   /** Callback acionado ao tocar no botão de sincronização manual. */
   onForceSync?: () => void;
+  /** Copia o relatório técnico de diagnóstico (sem PII) para a área de transferência. */
+  onCopyDiagnostics?: () => void;
 }
 
 /**
@@ -96,6 +99,7 @@ export function Header({
   pendingSyncCount,
   isSyncing = false,
   onForceSync,
+  onCopyDiagnostics,
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -460,6 +464,20 @@ export function Header({
                   <Plus className="h-4 w-4" />
                   Nova lista
                 </button>
+                {onCopyDiagnostics && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCopyDiagnostics();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                  >
+                    <Activity className="h-3.5 w-3.5" />
+                    Copiar diagnóstico
+                  </button>
+                )}
               </div>
             </div>
           )}

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
 import { appLogger, installGlobalErrorHandlers, serializeError } from './lib/logger';
+import { initWebVitals } from './lib/webVitals';
 
 installGlobalErrorHandlers();
 
@@ -86,3 +87,5 @@ createRoot(document.getElementById('root')!).render(
     </AppErrorBoundary>
   </StrictMode>
 );
+
+initWebVitals();

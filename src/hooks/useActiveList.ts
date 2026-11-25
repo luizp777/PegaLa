@@ -66,7 +66,10 @@ export function useActiveList() {
         (listShortcut === 'mercado' || listShortcut === 'farmacia' || listShortcut === 'geral')
       ) {
         window.history.replaceState({}, '', window.location.pathname);
-        const match = await db.lists.filter((l) => l.type === listShortcut).first();
+        const match = await db.lists
+          .orderBy('createdAt')
+          .filter((l) => l.type === listShortcut)
+          .first();
         if (mounted && match) {
           setLastActiveListId(match.id);
           setActiveListIdState(match.id);

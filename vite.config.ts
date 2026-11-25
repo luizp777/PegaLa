@@ -1,9 +1,60 @@
+/// <reference types="vitest/config" />
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+  version: string;
+};
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_COMMIT__: JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || 'local'),
+  },
+  test: {
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'json-summary'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/types/**',
+        'src/vite-env.d.ts',
+        'src/main.tsx',
+        'src/components/icons/**',
+        'src/components/CustomProductIcons.tsx',
+        'src/lib/catalogPtBr.ts',
+        'src/**/__tests__/**',
+      ],
+      thresholds: {
+        lines: 50,
+        statements: 48,
+        functions: 46,
+        branches: 44,
+        'src/db/**': {
+          lines: 60,
+          statements: 58,
+          functions: 65,
+          branches: 48,
+        },
+        'src/lib/**': {
+          lines: 64,
+          statements: 62,
+          functions: 62,
+          branches: 58,
+        },
+        'src/hooks/**': {
+          lines: 75,
+          statements: 72,
+          functions: 75,
+          branches: 60,
+        },
+      },
+    },
+  },
   build: {
     rollupOptions: {
       output: {

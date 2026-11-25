@@ -1,4 +1,4 @@
-import { ChevronsDownUp, ChevronsUpDown, Search, X } from 'lucide-react';
+import { ChevronsDownUp, ChevronsUpDown, Scale, Search, X } from 'lucide-react';
 import type { CategoryDefinition, CategoryId } from '../types';
 import { CategoryIcon } from './ItemIcon';
 
@@ -22,6 +22,10 @@ interface ActiveListToolbarProps {
   allCollapsed: boolean;
   /** Alterna entre recolher todos e expandir todos os corredores. */
   onToggleAllCollapsed: () => void;
+  /** Indica se o comparador de preços está habilitado para esta lista. */
+  canComparePrices?: boolean;
+  /** Abre o comparador de preços em mercados e farmácias próximos. */
+  onOpenPriceComparison?: () => void;
 }
 
 /**
@@ -41,14 +45,39 @@ export function ActiveListToolbar({
   onSelectCategory,
   allCollapsed,
   onToggleAllCollapsed,
+  canComparePrices = false,
+  onOpenPriceComparison,
 }: ActiveListToolbarProps) {
   const showSearch = pendingCount >= 8 || searchQuery.length > 0;
   const showCategoryPills = categories.length >= 2;
 
-  if (!showSearch && !showCategoryPills) return null;
+  if (!showSearch && !showCategoryPills && !canComparePrices) return null;
 
   return (
     <div className="mb-3 space-y-2">
+      {canComparePrices && onOpenPriceComparison && (
+        <div
+          className={
+            !showSearch && !showCategoryPills
+              ? 'flex items-center justify-between gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-50/60 px-3 py-2 dark:bg-emerald-950/30'
+              : 'flex justify-end'
+          }
+        >
+          {!showSearch && !showCategoryPills && (
+            <span className="text-xs font-medium text-emerald-900 dark:text-emerald-200">
+              Onde essa lista fica mais barata?
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onOpenPriceComparison}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-2xs transition hover:bg-emerald-700 active:scale-95"
+          >
+            <Scale className="h-3.5 w-3.5" />
+            Comparar preços
+          </button>
+        </div>
+      )}
       {showSearch && (
         <div className="relative flex items-center">
           <Search className="pointer-events-none absolute left-3 h-3.5 w-3.5 text-zinc-400" />

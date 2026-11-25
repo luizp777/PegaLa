@@ -7,6 +7,7 @@ import type {
   ShoppingList,
   UserDictionaryEntry,
 } from '../types';
+import type { CachedPriceComparison, PreferredProduct } from '../../shared/priceTypes';
 import { guessCategory, normalizeText } from '../lib/dictionaryPtBr';
 import { parseMultiLineInput } from '../lib/itemParser';
 import { dbLogger, serializeError } from '../lib/logger';
@@ -24,6 +25,8 @@ class PegaLaDB extends Dexie {
   dictionary!: EntityTable<UserDictionaryEntry, 'id'>;
   /** Fila FIFO de mutações locais aguardando envio ao Supabase. */
   pendingSync!: EntityTable<PendingSyncMutation, 'id'>;
+  /** Cache offline da última comparação de preços por lista. */
+  priceComparisons!: EntityTable<CachedPriceComparison, 'listId'>;
 
   /**
    * Inicializa o banco `PegaLaDB` e declara os índices das versões 1, 2 e 3
@@ -72,6 +75,13 @@ class PegaLaDB extends Dexie {
             }
           });
       });
+    this.version(4).stores({
+      lists: 'id, shareCode, createdAt, updatedAt',
+      items: 'id, listId, [listId+isChecked], [listId+normalizedName], updatedAt',
+      dictionary: '++id, &normalizedTerm, usageCount, lastUsedAt',
+      pendingSync: '++id, listId, createdAt',
+      priceComparisons: 'listId, computedAt',
+    });
   }
 }
 
@@ -725,4 +735,70 @@ export async function uncheckAllItems(listId: string): Promise<number> {
     }
     return checked.length;
   });
+}
+
+/**
+ * Salva no IndexedDB o snapshot bruto da última comparação de preços para uso offline.
+ *
+ * @param snapshot - Resultado bruto de lojas e cotações para a lista.
+ */
+export async function savePriceComparisonCache(snapshot: CachedPriceComparison): Promise<void> {
+  await db.priceComparisons.put(snapshot);
+}
+
+/**
+ * Recupera do IndexedDB o último snapshot de comparação de preços salvo para uma lista.
+ *
+ * @param listId - UUID da lista.
+ * @returns Snapshot salvo ou `undefined`.
+ */
+export async function getPriceComparisonCache(listId: string): Promise<CachedPriceComparison | undefined> {
+  return db.priceComparisons.get(listId);
+}
+
+/**
+ * Retorna um mapa de termo normalizado para o produto/marca preferido escolhido pelo usuário.
+ *
+ * @returns Mapa de `normalizedTerm` para {@link PreferredProduct}.
+ */
+export async function getPreferredProductsMap(): Promise<Map<string, PreferredProduct>> {
+  const entries = await db.dictionary.toArray();
+  const map = new Map<string, PreferredProduct>();
+  for (const entry of entries) {
+    if (entry.preferredProduct) {
+      map.set(entry.normalizedTerm, entry.preferredProduct);
+    }
+  }
+  return map;
+}
+
+/**
+ * Persiste no dicionário pessoal o produto/marca preferido para um termo da lista.
+ *
+ * @param displayName - Nome visível do item na lista.
+ * @param categoryId - Categoria atual do item.
+ * @param preferredProduct - Produto específico selecionado pelo usuário.
+ */
+export async function savePreferredProduct(
+  displayName: string,
+  categoryId: CategoryId,
+  preferredProduct: PreferredProduct
+): Promise<void> {
+  const normalizedTerm = normalizeText(displayName);
+  if (!normalizedTerm) return;
+
+  const now = new Date().toISOString();
+  const existing = await db.dictionary.where('normalizedTerm').equals(normalizedTerm).first();
+  if (existing && existing.id !== undefined) {
+    await db.dictionary.update(existing.id, { preferredProduct, lastUsedAt: now });
+  } else {
+    await db.dictionary.add({
+      normalizedTerm,
+      displayName,
+      categoryId,
+      usageCount: 1,
+      lastUsedAt: now,
+      preferredProduct,
+    });
+  }
 }

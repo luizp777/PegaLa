@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import 'fake-indexeddb/auto';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,8 @@ import { CategoryPickerSheet } from '../CategoryPickerSheet';
 import { CategoryGroup } from '../CategoryGroup';
 import { CheckedSection } from '../CheckedSection';
 import { CreateListModal } from '../CreateListModal';
+import { QuickCatalogDrawer } from '../QuickCatalogDrawer';
+import { ShareModal } from '../ShareModal';
 import { useTheme } from '../../hooks/useTheme';
 
 vi.mock('../../lib/supabase', () => ({
@@ -415,5 +418,64 @@ describe('Ciclo 7 — Estabilidade de Foco, Menu & Filtros', () => {
 
     expect(screen.getByLabelText('Filtrar itens salvos')).toHaveValue('');
     expect(screen.getByText('Item B 0')).toBeInTheDocument();
+  });
+});
+
+describe('QuickCatalogDrawer & ShareModal', () => {
+  it('renders QuickCatalogDrawer, filters catalog items, and adds new item on click', () => {
+    const onAddNew = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <QuickCatalogDrawer
+        open={true}
+        listType="mercado"
+        frequentItems={[]}
+        uncheckedByNormalizedName={new Map()}
+        checkedByNormalizedName={new Map()}
+        onAddNew={onAddNew}
+        onIncrement={vi.fn()}
+        onDecrement={vi.fn()}
+        onClose={onClose}
+      />
+    );
+
+    const searchInput = screen.getByLabelText('Buscar no catálogo');
+    fireEvent.change(searchInput, { target: { value: 'Banana' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Banana prata' }));
+    expect(onAddNew).toHaveBeenCalledWith('Banana prata');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders ShareModal with share code, QR toggle, and copy action', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const list = makeList({ shareCode: 'PEGA-XYZ123' });
+    render(
+      <ShareModal
+        open={true}
+        list={list}
+        onClose={vi.fn()}
+        onJoinedList={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('PEGA-XYZ123')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar' }));
+    expect(writeText).toHaveBeenCalledWith('PEGA-XYZ123');
+
+    const qrBtn = screen.getByRole('button', { name: 'Mostrar QR Code' });
+    fireEvent.click(qrBtn);
+    expect(screen.getByRole('button', { name: 'Ocultar QR Code' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
   });
 });

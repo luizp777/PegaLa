@@ -92,6 +92,8 @@ export interface ShoppingItem {
   updatedAt: string;
 }
 
+import type { PreferredProduct } from '../../shared/priceTypes';
+
 /**
  * Registro de aprendizado e frequência do dicionário pessoal do usuário.
  */
@@ -108,6 +110,8 @@ export interface UserDictionaryEntry {
   usageCount: number;
   /** Timestamp ISO 8601 do último uso do termo. */
   lastUsedAt: string;
+  /** Produto/marca preferido escolhido pelo usuário no comparador de preços. */
+  preferredProduct?: PreferredProduct;
 }
 
 /**

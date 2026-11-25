@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test & Coverage
+        run: npm run test:coverage
+
+      - name: Coverage Summary
+        if: always() && hashFiles('coverage/coverage-summary.json') != ''
+        run: |
+          node -e "
+            const fs = require('fs');
+            const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8')).total;
+            const out = process.env.GITHUB_STEP_SUMMARY;
+            fs.appendFileSync(out, '### Cobertura Vitest\\n| Métrica | % |\\n|---|---|\\n');
+            for (const k of ['lines', 'statements', 'functions', 'branches']) {
+              fs.appendFileSync(out, '| ' + k + ' | ' + summary[k].pct + '% |\\n');
+            }
+          "
+
+      - name: Build
+        run: npx vite build
+
+      - name: Check bundle budget
+        run: npm run check:bundle
+
+      - name: Security Audit (prod)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 3
+
+  e2e:
+    name: E2E (Playwright)
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Build E2E sync variant
+        env:
+          VITE_SUPABASE_URL: https://e2e-mock.supabase.co
+          VITE_SUPABASE_ANON_KEY: e2e-fake-key
+        run: npx vite build --outDir dist-e2e-sync
+
+      - name: Get Playwright version
+        id: pw-version
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7

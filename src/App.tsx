@@ -21,7 +21,9 @@ import { useActiveList } from './hooks/useActiveList';
 import { usePwaInstall } from './hooks/usePwaInstall';
 import { useTheme } from './hooks/useTheme';
 import { normalizeText } from './lib/dictionaryPtBr';
+import { buildDiagnosticsReport } from './lib/diagnostics';
 import { isSpeechRecognitionSupported } from './lib/speechParser';
+import { ensureSupabaseSession, isSupabaseConfigured, supabase } from './lib/supabase';
 import { useWakeLock } from './lib/wakeLock';
 import { hapticLight } from './lib/haptics';
 import { ActiveListToolbar } from './components/ActiveListToolbar';
@@ -43,6 +45,9 @@ const CreateListModal = lazy(() =>
 const CategoryPickerSheet = lazy(() =>
   import('./components/CategoryPickerSheet').then((m) => ({ default: m.CategoryPickerSheet }))
 );
+const PriceComparisonSheet = lazy(() =>
+  import('./components/PriceComparisonSheet').then((m) => ({ default: m.PriceComparisonSheet }))
+);
 
 /**
  * Estado da notificação toast temporária exibida no topo da tela.
@@ -52,6 +57,8 @@ interface ToastState {
   message: string;
   /** Item recém-excluído que pode ser restaurado pelo botão "Desfazer". */
   undoItem?: ShoppingItem;
+  /** Item recém-marcado elegível para captura rápida de preço na loja ativa. */
+  priceItem?: ShoppingItem;
 }
 
 const COLLAPSED_PREFIX = 'pegala_collapsed_';
@@ -104,8 +111,8 @@ export function App() {
   } = useActiveList();
 
   const [toast, setToast] = useState<ToastState | null>(null);
-  const showToast = useCallback((message: string, undoItem?: ShoppingItem) => {
-    setToast({ message, undoItem });
+  const showToast = useCallback((message: string, undoItem?: ShoppingItem, priceItem?: ShoppingItem) => {
+    setToast({ message, undoItem, priceItem });
   }, []);
 
   const { isDark, toggleTheme } = useTheme();
@@ -114,6 +121,10 @@ export function App() {
 
   const [shareOpen, setShareOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [priceCompareOpen, setPriceCompareOpen] = useState(false);
+  const [activeShoppingStore, setActiveShoppingStore] = useState<{ id: string; name: string } | null>(null);
+  const [quickPriceItem, setQuickPriceItem] = useState<ShoppingItem | null>(null);
+  const [quickPriceValue, setQuickPriceValue] = useState('');
   const [categoryPickerItem, setCategoryPickerItem] = useState<ShoppingItem | null>(null);
   const [listFilter, setListFilter] = useState<{
     listId: string | undefined;
@@ -287,9 +298,48 @@ export function App() {
     }
   }, [isSyncing, showToast]);
 
-  const handleToggleItem = useCallback((item: ShoppingItem) => {
-    void toggleItemChecked(item);
-  }, []);
+  const handleCopyDiagnostics = useCallback(async () => {
+    try {
+      const report = await buildDiagnosticsReport();
+      await navigator.clipboard.writeText(report);
+      showToast('Diagnóstico copiado!');
+    } catch {
+      showToast('Não foi possível copiar o diagnóstico.');
+    }
+  }, [showToast]);
+
+  const handleToggleItem = useCallback(
+    (item: ShoppingItem) => {
+      const markingAsChecked = !item.isChecked;
+      void toggleItemChecked(item);
+      if (markingAsChecked && activeShoppingStore && isSupabaseConfigured) {
+        showToast(`${item.name} no carrinho`, undefined, item);
+      }
+    },
+    [activeShoppingStore, showToast]
+  );
+
+  const handleSaveQuickPrice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickPriceItem || !activeShoppingStore || !supabase) return;
+    const val = Number(quickPriceValue.replace(',', '.'));
+    if (!Number.isFinite(val) || val < 0.1) {
+      showToast('Informe um preço válido (ex.: 5,49).');
+      return;
+    }
+    await ensureSupabaseSession();
+    const { error } = await supabase.rpc('report_community_price', {
+      p_store_id: activeShoppingStore.id,
+      p_normalized_term: quickPriceItem.normalizedName,
+      p_product_title: quickPriceItem.name,
+      p_pack_quantity: 1,
+      p_pack_unit: quickPriceItem.unit || 'un',
+      p_price_cents: Math.round(val * 100),
+    });
+    setQuickPriceItem(null);
+    setQuickPriceValue('');
+    showToast(error ? error.message : `Preço salvo em ${activeShoppingStore.name}!`);
+  };
 
   const handleIncrementItem = useCallback((item: ShoppingItem) => {
     void incrementItemQuantity(item);
@@ -409,6 +459,8 @@ export function App() {
     );
   };
 
+  const pendingItems = useMemo(() => groupedPending.flatMap((g) => g.items), [groupedPending]);
+
   return (
     <div className="min-h-dvh bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
       <Header
@@ -431,6 +483,7 @@ export function App() {
         pendingSyncCount={pendingSyncCount}
         isSyncing={isSyncing}
         onForceSync={() => void handleForceSync()}
+        onCopyDiagnostics={() => void handleCopyDiagnostics()}
       />
 
       {/* Toast Notification with Optional Undo Action */}
@@ -452,7 +505,60 @@ export function App() {
                 Desfazer
               </button>
             )}
+            {activeToast.priceItem && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickPriceItem(activeToast.priceItem ?? null);
+                  setQuickPriceValue('');
+                  setToast(null);
+                }}
+                className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white active:scale-95"
+              >
+                + Preço
+              </button>
+            )}
           </div>
+        </div>
+      )}
+
+      {quickPriceItem && activeShoppingStore && (
+        <div className="fixed inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-40 flex justify-center px-4">
+          <form
+            onSubmit={(e) => void handleSaveQuickPrice(e)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setQuickPriceItem(null);
+            }}
+            className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-emerald-500/30 bg-white p-2.5 shadow-xl dark:bg-zinc-900"
+          >
+            <span className="min-w-0 flex-1 truncate text-xs font-bold text-zinc-700 dark:text-zinc-200">
+              {quickPriceItem.name} (1 {quickPriceItem.unit || 'un'}) • {activeShoppingStore.name}:
+            </span>
+            <input
+              type="text"
+              inputMode="decimal"
+              autoFocus
+              value={quickPriceValue}
+              onChange={(e) => setQuickPriceValue(e.target.value)}
+              placeholder="R$ 0,00"
+              aria-label="Preço rápido em reais"
+              className="h-9 w-24 shrink-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2.5 text-base text-zinc-900 focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+            <button
+              type="submit"
+              className="h-9 shrink-0 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white active:scale-95"
+            >
+              Salvar
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuickPriceItem(null)}
+              aria-label="Fechar captura rápida de preço"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base font-semibold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              ×
+            </button>
+          </form>
         </div>
       )}
 
@@ -564,6 +670,8 @@ export function App() {
               onSelectCategory={setSelectedCategory}
               allCollapsed={allCollapsed}
               onToggleAllCollapsed={handleToggleAllCollapsed}
+              canComparePrices={isSupabaseConfigured && (pendingCount > 0 || checkedItems.length > 0)}
+              onOpenPriceComparison={() => setPriceCompareOpen(true)}
             />
 
             {/* Pending Items Grouped by Aisle / Category */}
@@ -666,6 +774,21 @@ export function App() {
             open={createOpen}
             onClose={() => setCreateOpen(false)}
             onCreate={handleCreateList}
+          />
+        )}
+
+        {priceCompareOpen && activeList && isSupabaseConfigured && (
+          <PriceComparisonSheet
+            open={priceCompareOpen}
+            listId={activeList.id}
+            listName={activeList.name}
+            listType={activeList.type}
+            pendingItems={pendingItems}
+            checkedItems={checkedItems}
+            activeShoppingStore={activeShoppingStore}
+            onSelectShoppingStore={setActiveShoppingStore}
+            onClose={() => setPriceCompareOpen(false)}
+            onShowToast={(msg) => showToast(msg)}
           />
         )}
       </Suspense>

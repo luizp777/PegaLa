@@ -15,6 +15,22 @@ export interface SerializedError {
 }
 
 /**
+ * Entrada sanitizada armazenada no buffer circular local de observabilidade.
+ */
+export interface BufferedLogEntry {
+  /** Timestamp ISO 8601 do evento. */
+  timestamp: string;
+  /** Severidade do evento. */
+  level: LogLevelName;
+  /** Nome do sub-logger emissor. */
+  logger: string;
+  /** Mensagem principal já sanitizada. */
+  message: string;
+  /** Metadados opcionais sanitizados sem PII. */
+  data?: Record<string, unknown>;
+}
+
+/**
  * Converte qualquer valor lançado em um `catch` (ou erro estruturado do Supabase)
  * em um objeto {@link SerializedError} seguro para inspeção nos logs.
  *
@@ -57,23 +73,134 @@ const LOG_LEVEL_IDS: Record<LogLevelName, number> = {
   FATAL: 6,
 };
 
+const MAX_BUFFER_SIZE = 50;
+const MAX_REMOTE_SENDS_PER_SESSION = 20;
+const SAFE_STRING_KEYS = new Set([
+  'code',
+  'name',
+  'action',
+  'level',
+  'logger',
+  'metric',
+  'rating',
+  'navigationType',
+  'status',
+]);
+
+const logBuffer: BufferedLogEntry[] = [];
+let remoteSendsCount = 0;
+
+/**
+ * Remove padrões sensíveis (códigos `PEGA-XXXXXX`, e-mails e tokens Bearer/JWT) de uma string.
+ *
+ * @param input - Texto bruto a ser higienizado.
+ * @returns Texto com eventuais segredos mascarados.
+ */
+export function redactSensitiveText(input: string): string {
+  return input
+    .replace(/PEGA-[A-Z0-9]{4,12}/gi, 'PEGA-***')
+    .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[email]')
+    .replace(/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, 'Bearer [token]')
+    .replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, '[jwt]');
+}
+
+function sanitizeValue(value: unknown, key?: string, depth = 0): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (!key || SAFE_STRING_KEYS.has(key) || key === 'message') {
+      return redactSensitiveText(value).slice(0, 240);
+    }
+    return '[redacted]';
+  }
+  if (depth >= 2) return '[truncated]';
+  if (value instanceof Error) {
+    return sanitizeValue(serializeError(value), undefined, depth + 1);
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 10).map((item) => sanitizeValue(item, undefined, depth + 1));
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = sanitizeValue(v, k, depth + 1);
+    }
+    return out;
+  }
+  return String(value);
+}
+
+/**
+ * Converte argumentos arbitrários de log em uma estrutura sanitizada sem PII ou tokens.
+ *
+ * @param args - Argumentos passados ao logger.
+ * @returns Mensagem principal e objeto de metadados higienizado.
+ */
+export function sanitizeLogArgs(args: unknown[]): {
+  message: string;
+  data?: Record<string, unknown>;
+} {
+  if (args.length === 0) return { message: '' };
+  const [first, ...rest] = args;
+  const message =
+    typeof first === 'string'
+      ? redactSensitiveText(first).slice(0, 240)
+      : redactSensitiveText(String(first)).slice(0, 240);
+
+  if (rest.length === 0) return { message };
+
+  if (rest.length === 1 && typeof rest[0] === 'object' && rest[0] !== null && !Array.isArray(rest[0])) {
+    return {
+      message,
+      data: sanitizeValue(rest[0], undefined, 0) as Record<string, unknown>,
+    };
+  }
+
+  return {
+    message,
+    data: { items: rest.slice(0, 5).map((item) => sanitizeValue(item, undefined, 0)) },
+  };
+}
+
+/**
+ * Retorna uma cópia das últimas entradas sanitizadas registradas no buffer circular em memória.
+ *
+ * @returns Lista cronológica das últimas até 50 entradas de log.
+ */
+export function getRecentLogs(): BufferedLogEntry[] {
+  return [...logBuffer];
+}
+
+/**
+ * Limpa o buffer circular local de logs (útil em testes automatizados).
+ */
+export function clearRecentLogs(): void {
+  logBuffer.length = 0;
+  remoteSendsCount = 0;
+}
+
 const isTestEnv = import.meta.env.MODE === 'test';
 const isDevEnv = import.meta.env.DEV;
 const minLevel = isTestEnv ? 4 : isDevEnv ? 2 : 3;
 const remoteLogEndpoint = import.meta.env.VITE_LOG_ENDPOINT as string | undefined;
 
-function sendRemoteLog(levelName: LogLevelName, loggerName: string, args: unknown[]): void {
+function pushToBuffer(entry: BufferedLogEntry): void {
+  if (logBuffer.length >= MAX_BUFFER_SIZE) {
+    logBuffer.shift();
+  }
+  logBuffer.push(entry);
+}
+
+function sendRemoteLog(entry: BufferedLogEntry): void {
   if (!remoteLogEndpoint || isDevEnv || isTestEnv || typeof navigator === 'undefined') return;
-  if (LOG_LEVEL_IDS[levelName] < 4) return;
+  if (LOG_LEVEL_IDS[entry.level] < 4) return;
+  if (remoteSendsCount >= MAX_REMOTE_SENDS_PER_SESSION) return;
+  remoteSendsCount += 1;
+
   try {
-    const payload = JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: levelName,
-      logger: loggerName,
-      data: args,
-    });
+    const payload = JSON.stringify(entry);
     if (typeof navigator.sendBeacon === 'function') {
-      navigator.sendBeacon(remoteLogEndpoint, payload);
+      navigator.sendBeacon(remoteLogEndpoint, new Blob([payload], { type: 'application/json' }));
     } else {
       void fetch(remoteLogEndpoint, {
         method: 'POST',
@@ -111,7 +238,17 @@ function createLogger(name: string): AppLogger {
     const now = new Date();
     const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
     consoleFn(`${ts} ${level} [${name}]`, ...args);
-    sendRemoteLog(level, name, args);
+
+    const sanitized = sanitizeLogArgs(args);
+    const entry: BufferedLogEntry = {
+      timestamp: now.toISOString(),
+      level,
+      logger: name,
+      message: sanitized.message,
+      ...(sanitized.data ? { data: sanitized.data } : {}),
+    };
+    pushToBuffer(entry);
+    sendRemoteLog(entry);
   };
 
   return {
