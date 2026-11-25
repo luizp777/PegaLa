@@ -24,7 +24,8 @@ Aplicativo **PWA (Progressive Web App) Offline-First** para lista ultra-rápida 
 - **Comparador de Preços (Mercado & Farmácia — Requer Supabase)**:
   - Descoberta de estabelecimentos próximos via **GPS** ou **CEP** (raio de `1`, `3`, `5` ou `10 km`) usando OpenStreetMap (Overpass/Nominatim) e ViaCEP.
   - Consulta híbrida com streaming progressivo (NDJSON): combina **preços online** de 10 redes brasileiras (Mambo, Oba Hortifruti, Swift, Sam's Club, Confiança, Tauste, Jaú Serve, Drogaria São Paulo, Drogarias Pacheco e Pague Menos) com **preços colaborativos** informados pela comunidade.
-  - Normalização automática de embalagens (`g`/`kg`, `ml`/`L`), ranking por loja única, sugestão de divisão em 2 lojas (quando há economia relevante), troca de marca preferida, captura rápida `+ Preço` ao marcar itens no carrinho e cache offline no IndexedDB.
+  - Normalização automática de embalagens (`g`/`kg`, `ml`/`L`), filtros negativos por categoria (`hortifruti`/`acougue`), ranking por loja única, sugestão de divisão em 2 lojas (quando há economia relevante), troca de marca preferida, captura rápida `+ Preço` ao marcar itens no carrinho e cache offline no IndexedDB.
+  - **Estabelecimento Fixado & "Leve-me lá"**: ao clicar em *"Escolher esta loja"*, o estabelecimento fica fixado em barra sticky abaixo do cabeçalho (persistido por lista), recalculando em tempo real o total estimado e o subtotal *"No carrinho"*, com botão 1-toque **"Leve-me lá"** que abre o aplicativo de navegação nativo (`geo:` no Android, `maps://` no iOS e Google Maps no desktop).
 - **Offline-First + Sincronização em Tempo Real**:
   - Funciona 100% offline via **IndexedDB (Dexie.js)** com transações atômicas, fila de mutações coalescida em lotes e coordenação multi-aba via **Web Locks API** (inclusive na inicialização de listas padrão).
   - Sincroniza instantaneamente entre dispositivos via **Supabase Realtime** (PostgreSQL + RLS + `REPLICA IDENTITY FULL` + deduplicação por `normalized_name` + fallback automático de reconexão + gatilho manual no cabeçalho) e convite por link, código `PEGA-XXXXXX` ou QR Code.
@@ -71,6 +72,7 @@ npm run test:e2e
    - **Fluxo B (SQL Editor)**: execute os arquivos de `supabase/migrations/` em ordem cronológica:
      1. [`20261124000000_baseline.sql`](./supabase/migrations/20261124000000_baseline.sql) — tabelas de listas (`lists`, `list_items`, `list_members`, `join_attempts`), constraints `CHECK`, **Realtime**, **RLS**, RPC `join_list_by_share_code` e `GRANT`s.
      2. [`20261125000000_price_comparison.sql`](./supabase/migrations/20261125000000_price_comparison.sql) — tabelas do comparador (`stores`, `store_prices`, `price_report_attempts`, `price_api_rate_limits`), view `store_prices_public` (`security_invoker`), RLS e RPCs (`report_community_price`, `upsert_online_prices`, `check_price_api_rate_limit`).
+     3. [`20261125000001_price_outlier_unit_fix.sql`](./supabase/migrations/20261125000001_price_outlier_unit_fix.sql) — normalização da mediana anti-outlier por unidade/embalagem na RPC `report_community_price`.
 3. Em **Authentication → Sign In / Providers**, ative **Allow anonymous sign-ins** (obrigatório para sincronizar sem cadastro) e, opcionalmente, **Google OAuth**.
 4. Copie a **Project URL** e a **Publishable / Anon Key** em **Project Settings → API** e configure:
    - **Localmente**: crie `.env.local` (ignorado pelo Git) baseado em [`.env.example`](./.env.example):
@@ -84,4 +86,4 @@ Sem essas variáveis, o PegaLá opera automaticamente em modo **100% local (Offl
 
 ## Histórico de Evolução
 
-O detalhamento dos ciclos concluídos (Ciclos 1 a 9 — Segurança, Design Review, Code Review, Performance/Escala, Acessibilidade, Estabilidade, Engenharia/Infraestrutura e Comparador de Preços) está documentado em [`status.md`](./status.md).
+O detalhamento dos ciclos concluídos (Ciclos 1 a 10 — Segurança, Design Review, Code Review, Performance/Escala, Acessibilidade, Estabilidade, Engenharia/Infraestrutura, Comparador de Preços e Loja Fixada/Navegação) está documentado em [`status.md`](./status.md).

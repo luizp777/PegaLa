@@ -9,6 +9,8 @@ const PINNED_STORE_PREFIX = 'pegala_pinned_store_';
 
 /**
  * Remove a preferência de loja fixada no `localStorage` quando a lista é excluída ou abandonada.
+ *
+ * @param listId - UUID da lista removida.
  */
 export function clearPinnedStoreStorage(listId: string | undefined): void {
   if (!listId) return;
@@ -70,10 +72,15 @@ function persistPinnedStore(listId: string | undefined, store: PinnedStoreSelect
  * Resumo dinâmico do estabelecimento fixado na lista ativa.
  */
 export interface PinnedStoreSummary {
+  /** Total estimado em centavos para todos os itens ativos da lista. */
   estimatedTotalCents: number;
+  /** Subtotal em centavos dos itens já marcados como "No carrinho". */
   inCartTotalCents: number;
+  /** Quantidade de itens com preço encontrado para a loja. */
   matchedCount: number;
+  /** Total de itens ativos considerados no cálculo. */
   totalItems: number;
+  /** Indica se há itens faltantes estimados pela média das demais lojas. */
   hasEstimatedMissing: boolean;
 }
 

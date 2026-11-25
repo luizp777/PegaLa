@@ -2,6 +2,24 @@
 
 ---
 
+## Ciclo 10 — Precisão do Comparador, Loja Fixada na Lista & "Leve-me lá"
+
+> **Status**: Concluído (Hardening, Feature + Polimento Code/Design Review concluídos)
+> **Data de conclusão**: 2026-11-24
+
+### Precisão, APIs & Banco de Dados
+- [x] **C10-01. Filtros negativos por categoria e fronteira de palavra** (`src/lib/priceEngine.ts`, `src/lib/__tests__/priceEngine.test.ts`): bloqueio de derivados/industrializados em `hortifruti` (ex.: refresco/suco de laranja) e `acougue`, com matching por fronteira de palavra (`containsForbiddenTerm`) evitando falsos negativos em *"embalagem"* / *"embalada"*, além de estimativa conservadora para `un` vs `>= 500 g/ml`.
+- [x] **C10-02. Cache de lojas, batching de RPCs e adaptadores** (`api/prices/nearby-stores.ts`, `api/prices/quotes.ts`, `api/prices/_adapters/sfccAdapter.ts`, `api/prices/_adapters/vtexAdapter.ts`, `src/hooks/usePriceComparison.ts`): descoberta mesmo com cache parcial (`< 3` lojas sem fetch nas últimas 24h), `upsert_online_prices` em lotes de até `80` linhas, expansão de `decodeHtmlEntities` no Jaú Serve, limite de `200` entradas no `regionCache` VTEX e limpeza de estado ao trocar de lista sem cache.
+- [x] **C10-03. Anti-outlier por unidade/embalagem no Supabase** (`supabase/migrations/20261125000001_price_outlier_unit_fix.sql`): `report_community_price` normaliza a mediana por `price_cents / pack_quantity` e mesma `pack_unit`.
+- [x] **C10-04. Ergonomia mobile, consistência e semântica ARIA** (`PriceComparisonSheet.tsx`, `ShareModal.tsx`, `ActiveListToolbar.tsx`): alvos de toque `>= 38px`, `role="tablist"`/`role="tab"`/`aria-expanded`, animação `animate-drawer-up` e `pb-safe` unificados, seletor de item em lojas vazias e botão `Comparar` inline com a busca.
+
+### Estabelecimento Fixado na Lista & Navegação 1-Toque ("Leve-me lá")
+- [x] **C10-05. Seleção persistida por lista e recálculo em tempo real** (`shared/priceTypes.ts`, `src/hooks/usePinnedStore.ts`): `PinnedStoreSelection` salvo por `listId` no `localStorage`, com recálculo reativo via Dexie (`useLiveQuery`) do total estimado e do subtotal *"No carrinho"*, limpeza ao excluir/sair da lista (`clearPinnedStoreStorage`) e atualização imediata ao salvar via `+ Preço` rápido.
+- [x] **C10-06. Barra sticky `PinnedStoreBar` e link nativo "Leve-me lá"** (`src/components/PinnedStoreBar.tsx`, `src/lib/navigationLink.ts`, `src/components/Header.tsx`, `src/App.tsx`): barra sticky abaixo do cabeçalho (layout em 2 linhas no `< sm`, prefixo `~` para estimativa parcial, `dark:bg-emerald-950/90`), ancoragem dinâmica de toasts/`+ Preço` abaixo da barra, botão *"Escolher esta loja"* fechando o comparador e URIs nativas (`geo:` com escape de parênteses no Android, `maps://` no iOS, Google Maps no desktop).
+- [x] **C10-07. Testes unitários e de componente** (`src/lib/__tests__/navigationLink.test.ts`, `src/components/__tests__/PriceComparisonSheet.test.tsx`).
+
+---
+
 ## Ciclo 9 — Comparador de Preços em Mercados e Farmácias Próximos (Fase 0 + Fase 1 + Reviews)
 
 > **Status**: Concluído (Fase 0, Fase 1, Code Review e Design Review concluídos)

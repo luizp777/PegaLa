@@ -109,17 +109,29 @@ export function isPersistedStoreId(id: string | null | undefined): boolean {
  * Estabelecimento fixado na página da lista após a comparação de preços.
  */
 export interface PinnedStoreSelection {
+  /** Identificador da loja (`UUID` do Supabase ou `temp-...`). */
   id: string;
+  /** Nome legível do estabelecimento. */
   name: string;
+  /** Slug da rede varejista quando identificada, ou `null`. */
   chainSlug: string | null;
+  /** Latitude do estabelecimento. */
   lat: number;
+  /** Longitude do estabelecimento. */
   lng: number;
+  /** Distância estimada em quilômetros a partir da busca. */
   distanceKm: number;
+  /** Bairro opcional. */
   neighborhood?: string | null;
+  /** Cidade opcional. */
   city?: string | null;
+  /** Total estimado em centavos salvo no momento da escolha (fallback offline). */
   fallbackTotalCents: number;
+  /** Quantidade de itens casados no momento da escolha. */
   fallbackMatchedCount: number;
+  /** Total de itens da lista no momento da escolha. */
   fallbackTotalItems: number;
+  /** Timestamp ISO da fixação. */
   pinnedAt: string;
 }
 

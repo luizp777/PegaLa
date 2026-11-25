@@ -4,10 +4,17 @@ import type { PinnedStoreSummary } from '../hooks/usePinnedStore';
 import { hapticLight } from '../lib/haptics';
 import { buildNavigationUrl } from '../lib/navigationLink';
 
+/**
+ * Propriedades do componente {@link PinnedStoreBar}.
+ */
 interface PinnedStoreBarProps {
+  /** Estabelecimento fixado na lista ativa. */
   store: PinnedStoreSelection;
+  /** Totais recalculados em tempo real para a loja fixada. */
   summary: PinnedStoreSummary;
+  /** Abre o comparador para trocar o estabelecimento selecionado. */
   onOpenComparator: () => void;
+  /** Remove a fixação do estabelecimento na lista ativa. */
   onUnpin: () => void;
 }
 
@@ -18,6 +25,9 @@ function formatBRL(cents: number): string {
 /**
  * Barra compacta fixada abaixo do cabeçalho exibindo o estabelecimento escolhido,
  * total estimado em tempo real, subtotal "No carrinho" e botão 1-toque "Leve-me lá".
+ *
+ * @param props - Propriedades de exibição e ações da barra fixada.
+ * @returns Região sticky renderizada abaixo do cabeçalho.
  */
 export function PinnedStoreBar({
   store,
