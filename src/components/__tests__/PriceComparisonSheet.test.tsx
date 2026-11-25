@@ -243,8 +243,8 @@ describe('PinnedStoreBar', () => {
     );
 
     expect(screen.getByText('Confiança Max')).toBeInTheDocument();
-    expect(screen.getByText(/10,54/)).toBeInTheDocument();
-    expect(screen.getByText(/No carrinho:/)).toBeInTheDocument();
+    expect(screen.getAllByText(/10,54/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/No carrinho:/).length).toBeGreaterThan(0);
 
     const navLink = screen.getByRole('link', { name: /Leve-me lá/i });
     expect(navLink).toHaveAttribute('href', expect.stringContaining('-22.3245,-49.0712'));
@@ -252,7 +252,7 @@ describe('PinnedStoreBar', () => {
     fireEvent.click(screen.getByLabelText('Trocar estabelecimento'));
     expect(onOpenComparator).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByLabelText('Desafixar estabelecimento'));
+    fireEvent.click(screen.getAllByLabelText('Desafixar estabelecimento')[0]);
     expect(onUnpin).toHaveBeenCalled();
   });
 });

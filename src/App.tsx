@@ -7,10 +7,12 @@ import {
   decrementOrMarkChecked,
   deleteItem,
   deleteList,
+  getPriceComparisonCache,
   incrementItemQuantity,
   leaveList,
   renameList,
   restoreDeletedItem,
+  savePriceComparisonCache,
   setItemExactQuantityAndUnit,
   toggleItemChecked,
   uncheckAllItems,
@@ -18,10 +20,10 @@ import {
 } from './db/localDb';
 import { flushPendingSync } from './db/syncEngine';
 import { useActiveList } from './hooks/useActiveList';
-import { usePinnedStore } from './hooks/usePinnedStore';
+import { clearPinnedStoreStorage, usePinnedStore } from './hooks/usePinnedStore';
 import { usePwaInstall } from './hooks/usePwaInstall';
 import { useTheme } from './hooks/useTheme';
-import { isPersistedStoreId } from '../shared/priceTypes';
+import { isPersistedStoreId, type PriceQuoteCandidate } from '../shared/priceTypes';
 import { normalizeText } from './lib/dictionaryPtBr';
 import { buildDiagnosticsReport } from './lib/diagnostics';
 import { isSpeechRecognitionSupported } from './lib/speechParser';
@@ -337,7 +339,7 @@ export function App() {
       return;
     }
     await ensureSupabaseSession();
-    const { error } = await supabase.rpc('report_community_price', {
+    const { data, error } = await supabase.rpc('report_community_price', {
       p_store_id: pinnedStore.id,
       p_normalized_term: quickPriceItem.normalizedName,
       p_product_title: quickPriceItem.name,
@@ -345,6 +347,51 @@ export function App() {
       p_pack_unit: quickPriceItem.unit || 'un',
       p_price_cents: Math.round(val * 100),
     });
+
+    if (!error && data && activeList) {
+      const row = data as {
+        id: string;
+        store_id: string | null;
+        chain_slug: string | null;
+        normalized_term: string;
+        product_key: string;
+        product_title: string;
+        brand: string | null;
+        ean: string | null;
+        pack_quantity: number;
+        pack_unit: string;
+        price_cents: number;
+        weight: number;
+        observed_at: string;
+        expires_at: string;
+      };
+      const existingCache = await getPriceComparisonCache(activeList.id);
+      if (existingCache) {
+        const newCandidate: PriceQuoteCandidate = {
+          id: row.id,
+          storeId: row.store_id,
+          chainSlug: row.chain_slug,
+          normalizedTerm: row.normalized_term,
+          productKey: row.product_key,
+          productTitle: row.product_title,
+          brand: row.brand,
+          ean: row.ean,
+          packQuantity: Number(row.pack_quantity) || 1,
+          packUnit: row.pack_unit || 'un',
+          priceCents: row.price_cents,
+          source: 'community',
+          observedAt: row.observed_at,
+          expiresAt: row.expires_at,
+          weight: Number(row.weight) || 1,
+        };
+        await savePriceComparisonCache({
+          ...existingCache,
+          candidates: [newCandidate, ...existingCache.candidates],
+          computedAt: new Date().toISOString(),
+        });
+      }
+    }
+
     setQuickPriceItem(null);
     setQuickPriceValue('');
     showToast(error ? error.message : `Preço salvo em ${pinnedStore.name}!`);
@@ -432,6 +479,7 @@ export function App() {
   };
 
   const handleDeleteList = async (id: string) => {
+    clearPinnedStoreStorage(id);
     await deleteList(id);
     const remaining = lists.filter((l) => l.id !== id);
     if (remaining.length > 0) {
@@ -440,6 +488,7 @@ export function App() {
   };
 
   const handleLeaveList = async (id: string) => {
+    clearPinnedStoreStorage(id);
     const target = lists.find((l) => l.id === id);
     await leaveList(id);
     const remaining = lists.filter((l) => l.id !== id);
@@ -501,83 +550,83 @@ export function App() {
             onUnpin={unpinStore}
           />
         )}
-      </div>
 
-      {/* Toast Notification with Optional Undo Action */}
-      {activeToast && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="animate-toast-in pointer-events-none fixed inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-40 flex justify-center px-4"
-        >
-          <div className="pointer-events-auto flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl dark:bg-zinc-800 dark:ring-1 dark:ring-zinc-700">
-            <span>{activeToast.message}</span>
-            {activeToast.undoItem && (
-              <button
-                type="button"
-                onClick={() => void handleUndoDelete()}
-                className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white active:scale-95"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Desfazer
-              </button>
-            )}
-            {activeToast.priceItem && (
-              <button
-                type="button"
-                onClick={() => {
-                  setQuickPriceItem(activeToast.priceItem ?? null);
-                  setQuickPriceValue('');
-                  setToast(null);
-                }}
-                className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white active:scale-95"
-              >
-                + Preço
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {quickPriceItem && pinnedStore && (
-        <div className="fixed inset-x-0 top-[calc(4.25rem+env(safe-area-inset-top))] z-40 flex justify-center px-4">
-          <form
-            onSubmit={(e) => void handleSaveQuickPrice(e)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setQuickPriceItem(null);
-            }}
-            className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-emerald-500/30 bg-white p-2.5 shadow-xl dark:bg-zinc-900"
+        {/* Toast Notification with Optional Undo Action */}
+        {activeToast && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="animate-toast-in pointer-events-none absolute inset-x-0 top-full z-40 mt-2 flex justify-center px-4"
           >
-            <span className="min-w-0 flex-1 truncate text-xs font-bold text-zinc-700 dark:text-zinc-200">
-              {quickPriceItem.name} (1 {quickPriceItem.unit || 'un'}) • {pinnedStore.name}:
-            </span>
-            <input
-              type="text"
-              inputMode="decimal"
-              autoFocus
-              value={quickPriceValue}
-              onChange={(e) => setQuickPriceValue(e.target.value)}
-              placeholder="R$ 0,00"
-              aria-label="Preço rápido em reais"
-              className="h-9 w-24 shrink-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2.5 text-base text-zinc-900 focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-            />
-            <button
-              type="submit"
-              className="h-9 shrink-0 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white active:scale-95"
+            <div className="pointer-events-auto flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl dark:bg-zinc-800 dark:ring-1 dark:ring-zinc-700">
+              <span>{activeToast.message}</span>
+              {activeToast.undoItem && (
+                <button
+                  type="button"
+                  onClick={() => void handleUndoDelete()}
+                  className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white active:scale-95"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Desfazer
+                </button>
+              )}
+              {activeToast.priceItem && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickPriceItem(activeToast.priceItem ?? null);
+                    setQuickPriceValue('');
+                    setToast(null);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white active:scale-95"
+                >
+                  + Preço
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {quickPriceItem && pinnedStore && (
+          <div className="absolute inset-x-0 top-full z-40 mt-2 flex justify-center px-4">
+            <form
+              onSubmit={(e) => void handleSaveQuickPrice(e)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setQuickPriceItem(null);
+              }}
+              className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-emerald-500/30 bg-white p-2.5 shadow-xl dark:bg-zinc-900"
             >
-              Salvar
-            </button>
-            <button
-              type="button"
-              onClick={() => setQuickPriceItem(null)}
-              aria-label="Fechar captura rápida de preço"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base font-semibold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            >
-              ×
-            </button>
-          </form>
-        </div>
-      )}
+              <span className="min-w-0 flex-1 truncate text-xs font-bold text-zinc-700 dark:text-zinc-200">
+                {quickPriceItem.name} (1 {quickPriceItem.unit || 'un'}) • {pinnedStore.name}:
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                autoFocus
+                value={quickPriceValue}
+                onChange={(e) => setQuickPriceValue(e.target.value)}
+                placeholder="R$ 0,00"
+                aria-label="Preço rápido em reais"
+                className="h-9 w-24 shrink-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2.5 text-base text-zinc-900 focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <button
+                type="submit"
+                className="h-9 shrink-0 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white active:scale-95"
+              >
+                Salvar
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuickPriceItem(null)}
+                aria-label="Fechar captura rápida de preço"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base font-semibold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                ×
+              </button>
+            </form>
+          </div>
+        )}
+      </div>
 
       {/* Main Content (extra bottom padding for Thumb-Zone Dock + List Tabs) */}
       <main className="mx-auto max-w-2xl px-3 pb-44 pt-3.5 sm:px-4">

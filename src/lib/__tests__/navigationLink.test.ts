@@ -4,12 +4,14 @@ import { buildNavigationUrl } from '../navigationLink';
 describe('buildNavigationUrl', () => {
   const store = { name: 'Confiança Max', lat: -22.3245, lng: -49.0712 };
 
-  it('gera URI geo: no Android para abrir seletor nativo (Waze/Maps)', () => {
+  it('gera URI geo: no Android escapando parênteses no nome', () => {
     const res = buildNavigationUrl(
-      store,
+      { name: 'Confiança Max (Centro)', lat: -22.3245, lng: -49.0712 },
       'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36'
     );
-    expect(res.href).toBe('geo:-22.3245,-49.0712?q=-22.3245,-49.0712(Confian%C3%A7a%20Max)');
+    expect(res.href).toBe(
+      'geo:-22.3245,-49.0712?q=-22.3245,-49.0712(Confian%C3%A7a%20Max%20%28Centro%29)'
+    );
     expect(res.externalTab).toBe(false);
   });
 

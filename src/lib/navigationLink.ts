@@ -27,8 +27,9 @@ export function buildNavigationUrl(
   const ua = userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '');
 
   if (/android/i.test(ua)) {
+    const geoLabel = label.replace(/\(/g, '%28').replace(/\)/g, '%29');
     return {
-      href: `geo:${coords}?q=${coords}(${label})`,
+      href: `geo:${coords}?q=${coords}(${geoLabel})`,
       externalTab: false,
     };
   }

@@ -1,11 +1,23 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { NearbyStore, PinnedStoreSelection, PreferredProduct } from '../../shared/priceTypes';
-import { db, getPreferredProductsMap, getPriceComparisonCache } from '../db/localDb';
+import { getPreferredProductsMap, getPriceComparisonCache } from '../db/localDb';
 import { computePriceComparison } from '../lib/priceEngine';
 import type { ShoppingItem } from '../types';
 
 const PINNED_STORE_PREFIX = 'pegala_pinned_store_';
+
+/**
+ * Remove a preferência de loja fixada no `localStorage` quando a lista é excluída ou abandonada.
+ */
+export function clearPinnedStoreStorage(listId: string | undefined): void {
+  if (!listId) return;
+  try {
+    localStorage.removeItem(`${PINNED_STORE_PREFIX}${listId}`);
+  } catch {
+    // Ignora erro de armazenamento
+  }
+}
 
 function loadPinnedStore(listId: string | undefined): PinnedStoreSelection | null {
   if (!listId) return null;
@@ -104,9 +116,6 @@ export function usePinnedStore(params: {
     ]);
     return { cache: cache ?? null, prefs };
   }, [listId, pinnedStore?.id]);
-
-  // Garante subscrição na tabela dictionary quando preferências mudam
-  useLiveQuery(() => db.dictionary.count(), []);
 
   const pinStore = useCallback(
     (store: PinnedStoreSelection) => {
