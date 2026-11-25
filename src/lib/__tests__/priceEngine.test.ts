@@ -114,12 +114,14 @@ describe('scoreCandidateMatch', () => {
   it('verifica compatibilidade de retailCategory com CategoryId', () => {
     expect(checkRetailCategoryCompatibility('/Hortifruti/Legumes/', 'hortifruti')).toBe('match');
     expect(checkRetailCategoryCompatibility('/Mercearia/Iogurte/', 'laticinios')).toBe('match');
+    expect(checkRetailCategoryCompatibility('/Higiene e Perfumaria/Sabonetes/', 'bebe')).toBe('neutral');
     expect(checkRetailCategoryCompatibility('/Mercearia/Salgadinhos/', 'hortifruti')).toBe('conflict');
     expect(checkRetailCategoryCompatibility(null, 'hortifruti')).toBe('neutral');
   });
 
   it('usa aliases para arroz branco e outros itens do catálogo com nomenclatura diferente no varejo', () => {
     expect(resolveRetailSearchQuery('arroz branco')).toBe('arroz tipo 1');
+    expect(resolveRetailSearchQuery('Café  moído')).toBe('cafe torrado moido');
     expect(resolveRetailSearchQuery('pasta de dente')).toBe('creme dental');
     expect(resolveRetailSearchQuery('racao cachorro')).toBe('racao caes');
     expect(resolveRetailSearchQuery('desodorante aerosol')).toBe('desodorante aerossol');

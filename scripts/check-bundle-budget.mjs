@@ -11,6 +11,7 @@ const BUDGETS = {
   entryCss: 14 * KB,
   shareModal: 11 * KB,
   priceCompareSheet: 14 * KB,
+  priceEngineChunk: 8 * KB,
   lazyChunk: 6 * KB,
   iconPackChunk: 15 * KB,
   supabaseChunk: 62 * KB,
@@ -29,7 +30,6 @@ const LAZY_CHUNKS = [
   'workbox-window',
   'syncEngine-',
   'diagnostics-',
-  'priceEngine-',
   'PinnedStoreBar-',
   'navigationLink-',
 ];
@@ -72,6 +72,15 @@ for (const { file, gzipBytes } of rows) {
     }
     if (gzipBytes > BUDGETS.iconPackChunk) {
       failures.push(`${file}: ${(gzipBytes / KB).toFixed(2)} KB > ${(BUDGETS.iconPackChunk / KB).toFixed(0)} KB`);
+    }
+  } else if (file.startsWith('priceEngine-') && file.endsWith('.js')) {
+    if (indexHtml.includes(file)) {
+      failures.push(`${file} vazou para o preload inicial em dist/index.html`);
+    }
+    if (gzipBytes > BUDGETS.priceEngineChunk) {
+      failures.push(
+        `${file}: ${(gzipBytes / KB).toFixed(2)} KB > ${(BUDGETS.priceEngineChunk / KB).toFixed(0)} KB`
+      );
     }
   } else if (LAZY_CHUNKS.some((prefix) => file.startsWith(prefix)) && file.endsWith('.js')) {
     if (indexHtml.includes(file)) {

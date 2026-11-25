@@ -230,6 +230,12 @@ export const SEARCH_TERM_ALIASES: Record<string, SearchTermAliasRule> = {
  * Resolve a query mais eficaz para enviar às APIs de busca dos varejistas.
  */
 export function resolveRetailSearchQuery(normalizedTerm: string): string {
-  const key = normalizedTerm.trim().toLowerCase();
+  const key = normalizedTerm
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   return SEARCH_TERM_ALIASES[key]?.searchQuery ?? key;
 }

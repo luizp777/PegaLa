@@ -427,6 +427,7 @@ const COMPATIBLE_CATEGORY_GROUPS: Partial<Record<CategoryId, CategoryId[]>> = {
   padaria: ['mercearia', 'laticinios'],
   laticinios: ['padaria', 'bebidas'],
   higiene: ['dermocosmeticos', 'bebe'],
+  bebe: ['higiene'],
   dermocosmeticos: ['higiene'],
   medicamentos: ['primeiros_socorros'],
   primeiros_socorros: ['medicamentos'],
