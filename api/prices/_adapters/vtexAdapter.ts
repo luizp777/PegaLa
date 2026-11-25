@@ -18,6 +18,7 @@ interface VtexProductResponse {
 
 const MAX_REGION_CACHE_ENTRIES = 200;
 const regionCache = new Map<string, { regionId: string | null; expiresAt: number }>();
+const regionInFlight = new Map<string, Promise<string | null>>();
 
 function setRegionCache(key: string, regionId: string | null): void {
   const now = Date.now();
@@ -43,22 +44,32 @@ async function resolveVtexRegion(host: string, cep: string): Promise<string | nu
     return cached.regionId;
   }
 
-  try {
-    const res = await fetch(
-      `${host}/api/checkout/pub/regions?country=BRA&postalCode=${cleanCep}`,
-      {
-        headers: { 'User-Agent': 'PegaLa/1.0' },
-        signal: AbortSignal.timeout(2500),
-      }
-    );
-    if (!res.ok) return null;
-    const data = (await res.json()) as Array<{ id?: string }>;
-    const regionId = Array.isArray(data) && data[0]?.id ? data[0].id : null;
-    setRegionCache(key, regionId);
-    return regionId;
-  } catch {
-    return null;
-  }
+  const pending = regionInFlight.get(key);
+  if (pending) return pending;
+
+  const promise = (async () => {
+    try {
+      const res = await fetch(
+        `${host}/api/checkout/pub/regions?country=BRA&postalCode=${cleanCep}`,
+        {
+          headers: { 'User-Agent': 'PegaLa/1.0' },
+          signal: AbortSignal.timeout(2500),
+        }
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as Array<{ id?: string }>;
+      const regionId = Array.isArray(data) && data[0]?.id ? data[0].id : null;
+      setRegionCache(key, regionId);
+      return regionId;
+    } catch {
+      return null;
+    } finally {
+      regionInFlight.delete(key);
+    }
+  })();
+
+  regionInFlight.set(key, promise);
+  return promise;
 }
 
 export function parseVtexProducts(
@@ -73,16 +84,30 @@ export function parseVtexProducts(
 
   for (const raw of data as VtexProductResponse[]) {
     const title = raw.productName?.trim();
-    const firstItem = raw.items?.[0];
-    const offer = firstItem?.sellers?.[0]?.commertialOffer;
-    const price = offer?.Price;
-    const available = offer?.AvailableQuantity ?? 0;
+    if (!title || !Array.isArray(raw.items)) continue;
 
-    if (!title || typeof price !== 'number' || price <= 0 || available <= 0) {
-      continue;
+    let selectedEan: string | undefined;
+    let selectedPrice: number | undefined;
+    for (const sku of raw.items) {
+      if (!Array.isArray(sku.sellers)) continue;
+      for (const seller of sku.sellers) {
+        const offer = seller.commertialOffer;
+        if (
+          typeof offer?.Price === 'number' &&
+          offer.Price > 0 &&
+          (offer.AvailableQuantity ?? 0) > 0
+        ) {
+          selectedPrice = offer.Price;
+          selectedEan = sku.ean;
+          break;
+        }
+      }
+      if (selectedPrice !== undefined) break;
     }
 
-    const priceCents = Math.round(price * 100);
+    if (selectedPrice === undefined) continue;
+
+    const priceCents = Math.round(selectedPrice * 100);
     if (priceCents < 10 || priceCents > 5000000) continue;
 
     const pack = parsePackServer(title);
@@ -90,10 +115,10 @@ export function parseVtexProducts(
       storeId: null,
       chainSlug,
       normalizedTerm,
-      productKey: buildProductKey(firstItem?.ean, title),
+      productKey: buildProductKey(selectedEan, title),
       productTitle: title.slice(0, 240),
       brand: raw.brand?.trim() || null,
-      ean: firstItem?.ean?.trim() || null,
+      ean: selectedEan?.trim() || null,
       packQuantity: pack.quantity,
       packUnit: pack.unit,
       priceCents,

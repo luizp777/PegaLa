@@ -301,10 +301,11 @@ export async function renameList(listId: string, newName: string): Promise<void>
  * @param listId - UUID da lista a ser removida.
  */
 export async function deleteList(listId: string): Promise<void> {
-  await db.transaction('rw', db.lists, db.items, db.pendingSync, async () => {
+  await db.transaction('rw', db.lists, db.items, db.pendingSync, db.priceComparisons, async () => {
     await db.items.where('listId').equals(listId).delete();
     await db.lists.delete(listId);
     await db.pendingSync.where('listId').equals(listId).delete();
+    await db.priceComparisons.delete(listId);
     await enqueueSync('delete_list', listId, listId, { id: listId });
   });
 }
@@ -316,10 +317,11 @@ export async function deleteList(listId: string): Promise<void> {
  * @param listId - UUID da lista compartilhada da qual o usuário está saindo.
  */
 export async function leaveList(listId: string): Promise<void> {
-  await db.transaction('rw', db.lists, db.items, db.pendingSync, async () => {
+  await db.transaction('rw', db.lists, db.items, db.pendingSync, db.priceComparisons, async () => {
     await db.items.where('listId').equals(listId).delete();
     await db.lists.delete(listId);
     await db.pendingSync.where('listId').equals(listId).delete();
+    await db.priceComparisons.delete(listId);
     await enqueueSync('leave_list', listId, listId, { id: listId });
   });
 }
@@ -738,6 +740,31 @@ export async function uncheckAllItems(listId: string): Promise<number> {
 }
 
 /**
+ * Remarca no carrinho uma lista específica de itens (usado pelo botão "Desfazer" ao recomeçar a lista).
+ *
+ * @param listId - UUID da lista.
+ * @param itemIds - IDs dos itens a serem restaurados como marcados.
+ */
+export async function recheckItems(listId: string, itemIds: string[]): Promise<void> {
+  if (itemIds.length === 0) return;
+  await db.transaction('rw', db.items, db.pendingSync, async () => {
+    const now = new Date().toISOString();
+    for (const id of itemIds) {
+      const item = await db.items.get(id);
+      if (!item || item.listId !== listId || item.isChecked) continue;
+      const updated: ShoppingItem = {
+        ...item,
+        isChecked: true,
+        checkedAt: now,
+        updatedAt: now,
+      };
+      await db.items.put(updated);
+      await enqueueSync('upsert_item', updated.id, listId, updated as unknown as Record<string, unknown>);
+    }
+  });
+}
+
+/**
  * Salva no IndexedDB o snapshot bruto da última comparação de preços para uso offline.
  *
  * @param snapshot - Resultado bruto de lojas e cotações para a lista.
@@ -788,17 +815,19 @@ export async function savePreferredProduct(
   if (!normalizedTerm) return;
 
   const now = new Date().toISOString();
-  const existing = await db.dictionary.where('normalizedTerm').equals(normalizedTerm).first();
-  if (existing && existing.id !== undefined) {
-    await db.dictionary.update(existing.id, { preferredProduct, lastUsedAt: now });
-  } else {
-    await db.dictionary.add({
-      normalizedTerm,
-      displayName,
-      categoryId,
-      usageCount: 1,
-      lastUsedAt: now,
-      preferredProduct,
-    });
-  }
+  await db.transaction('rw', db.dictionary, async () => {
+    const existing = await db.dictionary.where('normalizedTerm').equals(normalizedTerm).first();
+    if (existing && existing.id !== undefined) {
+      await db.dictionary.update(existing.id, { preferredProduct, lastUsedAt: now });
+    } else {
+      await db.dictionary.add({
+        normalizedTerm,
+        displayName,
+        categoryId,
+        usageCount: 1,
+        lastUsedAt: now,
+        preferredProduct,
+      });
+    }
+  });
 }

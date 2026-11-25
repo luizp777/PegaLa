@@ -297,12 +297,12 @@ export function QuickAddBar({
     <>
       {catalogOpen && (
         <div
-          className="fixed inset-0 z-20 bg-black/15"
+          className="fixed inset-0 z-30 bg-black/20"
           onClick={() => setCatalogOpen(false)}
           aria-hidden="true"
         />
       )}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-200/90 bg-white/95 backdrop-blur-md pb-safe dark:border-zinc-800/90 dark:bg-zinc-950/95">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200/90 bg-white/95 backdrop-blur-md pb-safe dark:border-zinc-800/90 dark:bg-zinc-950/95">
         <div className="mx-auto max-w-2xl px-3 pt-2 sm:px-4">
           {/* Expandable Thumb-Zone Quick Catalog Drawer (lazy-loaded on demand) */}
           {activeList && catalogOpen && (
@@ -335,7 +335,7 @@ export function QuickAddBar({
             <button
               type="button"
               onClick={voice.stopListening}
-              className="rounded-lg bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white"
+              className="min-h-[36px] shrink-0 rounded-lg bg-red-600 px-3 py-1 text-xs font-bold text-white active:scale-95"
             >
               Parar
             </button>
@@ -349,11 +349,9 @@ export function QuickAddBar({
               <button
                 key={s.term}
                 type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  void handleSuggestionPick(s.term);
-                }}
-                className="flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-3.5 py-1.5 text-sm font-medium text-zinc-800 transition hover:border-emerald-400 hover:bg-emerald-50 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/50"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => void handleSuggestionPick(s.term)}
+                className="flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-3.5 py-1.5 text-sm font-medium text-zinc-800 transition hover:border-emerald-400 hover:bg-emerald-50 active:scale-95 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/50"
               >
                 <ItemIcon name={s.term} categoryId={s.categoryId} size="chip" />
                 <span>{s.term}</span>
@@ -379,11 +377,9 @@ export function QuickAddBar({
               <button
                 key={pill.label}
                 type="button"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  void handleQuickQtyPill(pill);
-                }}
-                className="flex h-9 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-100 px-3 text-xs font-bold text-zinc-700 transition active:scale-95 active:bg-emerald-600 active:text-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => void handleQuickQtyPill(pill)}
+                className="flex h-10 shrink-0 items-center rounded-xl border border-zinc-200 bg-zinc-100 px-3.5 text-xs font-bold text-zinc-700 transition active:scale-95 active:bg-emerald-600 active:text-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
               >
                 {pill.label}
               </button>
@@ -505,6 +501,7 @@ export function QuickAddBar({
             }}
             onPaste={handlePaste}
             placeholder="Adicionar item..."
+            aria-label="Adicionar item à lista"
             enterKeyHint="done"
             autoComplete="off"
             className="h-12 min-w-0 flex-1 rounded-2xl border border-zinc-300 bg-zinc-50 px-3.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 dark:focus:border-emerald-500 dark:focus:bg-zinc-900"

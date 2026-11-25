@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardPaste, LayoutGrid, Loader2, Mic, RotateCcw, ShoppingBag } from 'lucide-react';
+import { ClipboardPaste, LayoutGrid, Loader2, Mic, ShoppingBag } from 'lucide-react';
 import {
   addItemsFromText,
   createList,
@@ -10,6 +10,7 @@ import {
   getPriceComparisonCache,
   incrementItemQuantity,
   leaveList,
+  recheckItems,
   renameList,
   restoreDeletedItem,
   savePriceComparisonCache,
@@ -31,6 +32,7 @@ import { ensureSupabaseSession, isSupabaseConfigured, supabase } from './lib/sup
 import { useWakeLock } from './lib/wakeLock';
 import { hapticLight } from './lib/haptics';
 import { ActiveListToolbar } from './components/ActiveListToolbar';
+import { GlobalToastBar, type ToastState } from './components/GlobalToastBar';
 import { Header } from './components/Header';
 import { PinnedStoreBar } from './components/PinnedStoreBar';
 import { CategoryGroup } from './components/CategoryGroup';
@@ -53,18 +55,6 @@ const CategoryPickerSheet = lazy(() =>
 const PriceComparisonSheet = lazy(() =>
   import('./components/PriceComparisonSheet').then((m) => ({ default: m.PriceComparisonSheet }))
 );
-
-/**
- * Estado da notificação toast temporária exibida no topo da tela.
- */
-interface ToastState {
-  /** Mensagem principal exibida ao usuário. */
-  message: string;
-  /** Item recém-excluído que pode ser restaurado pelo botão "Desfazer". */
-  undoItem?: ShoppingItem;
-  /** Item recém-marcado elegível para captura rápida de preço na loja ativa. */
-  priceItem?: ShoppingItem;
-}
 
 const COLLAPSED_PREFIX = 'pegala_collapsed_';
 
@@ -116,9 +106,17 @@ export function App() {
   } = useActiveList();
 
   const [toast, setToast] = useState<ToastState | null>(null);
-  const showToast = useCallback((message: string, undoItem?: ShoppingItem, priceItem?: ShoppingItem) => {
-    setToast({ message, undoItem, priceItem });
-  }, []);
+  const showToast = useCallback(
+    (
+      message: string,
+      undoItem?: ShoppingItem,
+      priceItem?: ShoppingItem,
+      undoRestart?: { listId: string; itemIds: string[] }
+    ) => {
+      setToast({ message, undoItem, priceItem, undoRestart });
+    },
+    []
+  );
 
   const { isDark, toggleTheme } = useTheme();
   const pwaInstall = usePwaInstall();
@@ -129,6 +127,7 @@ export function App() {
   const [priceCompareOpen, setPriceCompareOpen] = useState(false);
   const [quickPriceItem, setQuickPriceItem] = useState<ShoppingItem | null>(null);
   const [quickPriceValue, setQuickPriceValue] = useState('');
+  const [isSavingQuickPrice, setIsSavingQuickPrice] = useState(false);
   const [categoryPickerItem, setCategoryPickerItem] = useState<ShoppingItem | null>(null);
   const [listFilter, setListFilter] = useState<{
     listId: string | undefined;
@@ -197,7 +196,7 @@ export function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const duration = toast.undoItem ? 4200 : 2500;
+    const duration = toast.undoItem || toast.undoRestart || toast.priceItem ? 4500 : 2500;
     const t = setTimeout(() => setToast(null), duration);
     return () => clearTimeout(t);
   }, [toast]);
@@ -332,69 +331,76 @@ export function App() {
 
   const handleSaveQuickPrice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quickPriceItem || !pinnedStore || !supabase) return;
+    if (!quickPriceItem || !pinnedStore || !supabase || isSavingQuickPrice) return;
     const val = Number(quickPriceValue.replace(',', '.'));
     if (!Number.isFinite(val) || val < 0.1) {
       showToast('Informe um preço válido (ex.: 5,49).');
       return;
     }
-    await ensureSupabaseSession();
-    const { data, error } = await supabase.rpc('report_community_price', {
-      p_store_id: pinnedStore.id,
-      p_normalized_term: quickPriceItem.normalizedName,
-      p_product_title: quickPriceItem.name,
-      p_pack_quantity: 1,
-      p_pack_unit: quickPriceItem.unit || 'un',
-      p_price_cents: Math.round(val * 100),
-    });
+    setIsSavingQuickPrice(true);
+    try {
+      await ensureSupabaseSession();
+      const { data, error } = await supabase.rpc('report_community_price', {
+        p_store_id: pinnedStore.id,
+        p_normalized_term: quickPriceItem.normalizedName,
+        p_product_title: quickPriceItem.name,
+        p_pack_quantity: quickPriceItem.quantity > 0 ? quickPriceItem.quantity : 1,
+        p_pack_unit: quickPriceItem.unit || 'un',
+        p_price_cents: Math.round(val * 100),
+      });
 
-    if (!error && data && activeList) {
-      const row = data as {
-        id: string;
-        store_id: string | null;
-        chain_slug: string | null;
-        normalized_term: string;
-        product_key: string;
-        product_title: string;
-        brand: string | null;
-        ean: string | null;
-        pack_quantity: number;
-        pack_unit: string;
-        price_cents: number;
-        weight: number;
-        observed_at: string;
-        expires_at: string;
-      };
-      const existingCache = await getPriceComparisonCache(activeList.id);
-      if (existingCache) {
-        const newCandidate: PriceQuoteCandidate = {
-          id: row.id,
-          storeId: row.store_id,
-          chainSlug: row.chain_slug,
-          normalizedTerm: row.normalized_term,
-          productKey: row.product_key,
-          productTitle: row.product_title,
-          brand: row.brand,
-          ean: row.ean,
-          packQuantity: Number(row.pack_quantity) || 1,
-          packUnit: row.pack_unit || 'un',
-          priceCents: row.price_cents,
-          source: 'community',
-          observedAt: row.observed_at,
-          expiresAt: row.expires_at,
-          weight: Number(row.weight) || 1,
+      if (!error && data && activeList) {
+        const row = data as {
+          id: string;
+          store_id: string | null;
+          chain_slug: string | null;
+          normalized_term: string;
+          product_key: string;
+          product_title: string;
+          brand: string | null;
+          ean: string | null;
+          pack_quantity: number;
+          pack_unit: string;
+          price_cents: number;
+          weight: number;
+          observed_at: string;
+          expires_at: string;
         };
-        await savePriceComparisonCache({
-          ...existingCache,
-          candidates: [newCandidate, ...existingCache.candidates],
-          computedAt: new Date().toISOString(),
-        });
+        const existingCache = await getPriceComparisonCache(activeList.id);
+        if (existingCache) {
+          const newCandidate: PriceQuoteCandidate = {
+            id: row.id,
+            storeId: row.store_id,
+            chainSlug: row.chain_slug,
+            normalizedTerm: row.normalized_term,
+            productKey: row.product_key,
+            productTitle: row.product_title,
+            brand: row.brand,
+            ean: row.ean,
+            packQuantity: Number(row.pack_quantity) || 1,
+            packUnit: row.pack_unit || 'un',
+            priceCents: row.price_cents,
+            source: 'community',
+            observedAt: row.observed_at,
+            expiresAt: row.expires_at,
+            weight: Number(row.weight) || 1,
+          };
+          await savePriceComparisonCache({
+            ...existingCache,
+            candidates: [newCandidate, ...existingCache.candidates],
+            computedAt: new Date().toISOString(),
+          });
+        }
       }
-    }
 
-    setQuickPriceItem(null);
-    setQuickPriceValue('');
-    showToast(error ? error.message : `Preço salvo em ${pinnedStore.name}!`);
+      setQuickPriceItem(null);
+      setQuickPriceValue('');
+      showToast(error ? error.message : `Preço salvo em ${pinnedStore.name}!`);
+    } catch {
+      showToast('Não foi possível salvar o preço agora.');
+    } finally {
+      setIsSavingQuickPrice(false);
+    }
   };
 
   const handleIncrementItem = useCallback((item: ShoppingItem) => {
@@ -463,12 +469,26 @@ export function App() {
     await restoreDeletedItem(itemToRestore);
   };
 
+  const handleUndoRestart = async () => {
+    if (!toast?.undoRestart) return;
+    hapticLight();
+    const { listId, itemIds } = toast.undoRestart;
+    setToast(null);
+    await recheckItems(listId, itemIds);
+  };
+
   const handleRestartList = async () => {
     if (!activeList) return;
     hapticLight();
+    const checkedIds = checkedItems.map((i) => i.id);
     const count = await uncheckAllItems(activeList.id);
     if (count > 0) {
-      showToast(`${count} ${count === 1 ? 'item reativado' : 'itens reativados'} para compra!`);
+      showToast(
+        `${count} ${count === 1 ? 'item reativado' : 'itens reativados'} para compra!`,
+        undefined,
+        undefined,
+        { listId: activeList.id, itemIds: checkedIds }
+      );
     }
   };
 
@@ -550,83 +570,26 @@ export function App() {
             onUnpin={unpinStore}
           />
         )}
-
-        {/* Toast Notification with Optional Undo Action */}
-        {activeToast && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="animate-toast-in pointer-events-none absolute inset-x-0 top-full z-40 mt-2 flex justify-center px-4"
-          >
-            <div className="pointer-events-auto flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl dark:bg-zinc-800 dark:ring-1 dark:ring-zinc-700">
-              <span>{activeToast.message}</span>
-              {activeToast.undoItem && (
-                <button
-                  type="button"
-                  onClick={() => void handleUndoDelete()}
-                  className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white active:scale-95"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Desfazer
-                </button>
-              )}
-              {activeToast.priceItem && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuickPriceItem(activeToast.priceItem ?? null);
-                    setQuickPriceValue('');
-                    setToast(null);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white active:scale-95"
-                >
-                  + Preço
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {quickPriceItem && pinnedStore && (
-          <div className="absolute inset-x-0 top-full z-40 mt-2 flex justify-center px-4">
-            <form
-              onSubmit={(e) => void handleSaveQuickPrice(e)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setQuickPriceItem(null);
-              }}
-              className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-emerald-500/30 bg-white p-2.5 shadow-xl dark:bg-zinc-900"
-            >
-              <span className="min-w-0 flex-1 truncate text-xs font-bold text-zinc-700 dark:text-zinc-200">
-                {quickPriceItem.name} (1 {quickPriceItem.unit || 'un'}) • {pinnedStore.name}:
-              </span>
-              <input
-                type="text"
-                inputMode="decimal"
-                autoFocus
-                value={quickPriceValue}
-                onChange={(e) => setQuickPriceValue(e.target.value)}
-                placeholder="R$ 0,00"
-                aria-label="Preço rápido em reais"
-                className="h-9 w-24 shrink-0 rounded-xl border border-zinc-200 bg-zinc-50 px-2.5 text-base text-zinc-900 focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-              />
-              <button
-                type="submit"
-                className="h-9 shrink-0 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white active:scale-95"
-              >
-                Salvar
-              </button>
-              <button
-                type="button"
-                onClick={() => setQuickPriceItem(null)}
-                aria-label="Fechar captura rápida de preço"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base font-semibold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                ×
-              </button>
-            </form>
-          </div>
-        )}
       </div>
+
+      {/* Global Toast & Quick Price Layer (above z-50 modals & sheets) */}
+      <GlobalToastBar
+        toast={activeToast}
+        onUndoDelete={() => void handleUndoDelete()}
+        onUndoRestart={() => void handleUndoRestart()}
+        onOpenQuickPrice={(item) => {
+          setQuickPriceItem(item);
+          setQuickPriceValue('');
+          setToast(null);
+        }}
+        quickPriceItem={quickPriceItem}
+        pinnedStore={pinnedStore}
+        quickPriceValue={quickPriceValue}
+        isSavingQuickPrice={isSavingQuickPrice}
+        onQuickPriceValueChange={setQuickPriceValue}
+        onSubmitQuickPrice={(e) => void handleSaveQuickPrice(e)}
+        onCloseQuickPrice={() => setQuickPriceItem(null)}
+      />
 
       {/* Main Content (extra bottom padding for Thumb-Zone Dock + List Tabs) */}
       <main className="mx-auto max-w-2xl px-3 pb-44 pt-3.5 sm:px-4">

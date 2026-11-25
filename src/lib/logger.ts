@@ -237,9 +237,12 @@ function createLogger(name: string): AppLogger {
     if (LOG_LEVEL_IDS[level] < minLevel) return;
     const now = new Date();
     const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
-    consoleFn(`${ts} ${level} [${name}]`, ...args);
-
     const sanitized = sanitizeLogArgs(args);
+    if (sanitized.data) {
+      consoleFn(`${ts} ${level} [${name}]`, sanitized.message, sanitized.data);
+    } else {
+      consoleFn(`${ts} ${level} [${name}]`, sanitized.message);
+    }
     const entry: BufferedLogEntry = {
       timestamp: now.toISOString(),
       level,

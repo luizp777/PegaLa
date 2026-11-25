@@ -114,6 +114,16 @@ export function usePriceComparison(params: {
   const [cachedAt, setCachedAt] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  const candidatesRef = useRef<PriceQuoteCandidate[]>([]);
+  const [cacheHydratedListId, setCacheHydratedListId] = useState<string | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const activeItems = useMemo(
     () => (includeChecked ? [...pendingItems, ...checkedItems] : pendingItems),
@@ -132,17 +142,20 @@ export function usePriceComparison(params: {
       setPreferredByTerm(prefs);
       if (cached) {
         setStores(cached.stores);
+        candidatesRef.current = cached.candidates;
         setCandidates(cached.candidates);
         setFailedChains(cached.failedChains);
         setCachedAt(cached.computedAt);
         setIsOfflineCache(!navigator.onLine);
       } else {
         setStores([]);
+        candidatesRef.current = [];
         setCandidates([]);
         setFailedChains([]);
         setCachedAt(null);
         setIsOfflineCache(false);
       }
+      setCacheHydratedListId(listId);
     })();
     return () => {
       active = false;
@@ -291,12 +304,14 @@ export function usePriceComparison(params: {
             const event = JSON.parse(trimmed) as QuotesStreamEvent;
             if (event.type === 'cache') {
               accumulated = [...event.candidates];
+              candidatesRef.current = accumulated;
               setCandidates(accumulated);
             } else if (event.type === 'chain') {
               chainsSeen.add(event.chainSlug);
               setStreamProgress({ done: chainsSeen.size, total: Math.max(1, chains.length) });
               if (event.candidates.length > 0) {
                 accumulated = [...accumulated, ...event.candidates];
+                candidatesRef.current = accumulated;
                 setCandidates(accumulated);
               }
             } else if (event.type === 'done') {
@@ -337,22 +352,28 @@ export function usePriceComparison(params: {
         });
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-        setError(err instanceof Error ? err.message : 'Erro ao comparar preços.');
+        if (abortRef.current === controller) {
+          setError(err instanceof Error ? err.message : 'Erro ao comparar preços.');
+        }
       } finally {
-        setIsLoadingStores(false);
-        setIsStreamingQuotes(false);
+        if (abortRef.current === controller) {
+          setIsLoadingStores(false);
+          setIsStreamingQuotes(false);
+        }
       }
     },
     [activeItems, listId, listType]
   );
 
-  // Dispara comparação inicial automaticamente se já houver localização salva e cache vazio/antigo
-  const initialTriggeredRef = useRef(false);
+  // Dispara comparação inicial automaticamente após hidratar cache local (uma vez por listId)
+  const triggeredListIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (initialTriggeredRef.current) return;
+    if (cacheHydratedListId !== listId) return;
+    if (triggeredListIdRef.current === listId) return;
     if (location && navigator.onLine && activeItems.length > 0) {
-      initialTriggeredRef.current = true;
+      triggeredListIdRef.current = listId;
       queueMicrotask(() => {
+        if (!mountedRef.current) return;
         void runComparison({
           cep: location.cep || undefined,
           lat: location.lat,
@@ -361,7 +382,7 @@ export function usePriceComparison(params: {
         });
       });
     }
-  }, [location, activeItems.length, runComparison]);
+  }, [cacheHydratedListId, listId, location, activeItems.length, runComparison]);
 
   const requestGpsAndCompare = useCallback(
     async (radiusKm?: 1 | 3 | 5 | 10) => {
@@ -377,6 +398,10 @@ export function usePriceComparison(params: {
       await new Promise<void>((resolve) => {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
+            if (!mountedRef.current) {
+              resolve();
+              return;
+            }
             void runComparison({
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
@@ -384,8 +409,10 @@ export function usePriceComparison(params: {
             }).finally(resolve);
           },
           () => {
-            setIsLoadingStores(false);
-            setError('Permissão de localização negada. Digite seu CEP para continuar.');
+            if (mountedRef.current) {
+              setIsLoadingStores(false);
+              setError('Permissão de localização negada. Digite seu CEP para continuar.');
+            }
             resolve();
           },
           { enableHighAccuracy: false, timeout: 8000, maximumAge: 300_000 }
@@ -521,23 +548,24 @@ export function usePriceComparison(params: {
           expiresAt: row.expires_at,
           weight: Number(row.weight) || 1,
         };
-        setCandidates((prev) => {
-          const next = [newCandidate, ...prev];
-          if (location && stores.length > 0) {
-            void savePriceComparisonCache({
-              listId,
-              locationKey: `${location.cep || 'gps'}:${location.radiusKm}`,
-              locationLabel: location.label,
-              cepPrefix: location.cep.slice(0, 5),
-              radiusKm: location.radiusKm,
-              stores,
-              candidates: next,
-              failedChains,
-              computedAt: new Date().toISOString(),
-            });
-          }
-          return next;
-        });
+        const nextCandidates = [newCandidate, ...candidatesRef.current];
+        candidatesRef.current = nextCandidates;
+        setCandidates(nextCandidates);
+        if (location && stores.length > 0) {
+          const nowIso = new Date().toISOString();
+          setCachedAt(nowIso);
+          void savePriceComparisonCache({
+            listId,
+            locationKey: `${location.cep || 'gps'}:${location.radiusKm}`,
+            locationLabel: location.label,
+            cepPrefix: location.cep.slice(0, 5),
+            radiusKm: location.radiusKm,
+            stores,
+            candidates: nextCandidates,
+            failedChains,
+            computedAt: nowIso,
+          });
+        }
       }
 
       return { ok: true };

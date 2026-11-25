@@ -1,7 +1,6 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   AlertCircle,
-  Check,
   ChevronDown,
   ChevronUp,
   Edit3,
@@ -18,9 +17,17 @@ import {
 import { isPersistedStoreId, type PinnedStoreSelection } from '../../shared/priceTypes';
 import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import { usePriceComparison } from '../hooks/usePriceComparison';
+import { formatBRL, formatCepMask } from '../lib/formatters';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
+import { formatQuantity } from '../lib/itemParser';
 import type { MatchedStoreItem } from '../lib/priceEngine';
 import type { ListType, ShoppingItem } from '../types';
+import {
+  ManualPriceDock,
+  ProductSwapDock,
+  type PriceEditTarget,
+} from './price-comparison/PriceComparisonDocks';
+import { SplitPurchaseTab } from './price-comparison/SplitPurchaseTab';
 
 /**
  * Propriedades do componente {@link PriceComparisonSheet}.
@@ -46,15 +53,6 @@ interface PriceComparisonSheetProps {
   onClose: () => void;
   /** Callback para exibir feedback toast no app. */
   onShowToast: (msg: string) => void;
-}
-
-function formatCepMask(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
-}
-
-function formatBRL(cents: number): string {
-  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 function formatSourceBadge(item: MatchedStoreItem): string {
@@ -83,7 +81,6 @@ export function PriceComparisonSheet({
   onShowToast,
 }: PriceComparisonSheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  useModalAccessibility(open, panelRef, onClose);
 
   const {
     location,
@@ -115,23 +112,35 @@ export function PriceComparisonSheet({
   const [swapTarget, setSwapTarget] = useState<MatchedStoreItem | null>(null);
 
   // Estado para informar/ajustar preço manual (dock fixo)
-  const [priceEditTarget, setPriceEditTarget] = useState<{
-    storeId: string;
-    storeName: string;
-    item: ShoppingItem;
-    selectableItems?: ShoppingItem[];
-    currentTitle?: string;
-    packQuantity: number;
-    packUnit: string;
-  } | null>(null);
+  const [priceEditTarget, setPriceEditTarget] = useState<PriceEditTarget | null>(null);
   const [manualPriceInput, setManualPriceInput] = useState('');
   const [isSubmittingPrice, setIsSubmittingPrice] = useState(false);
+
+  const handleEscapeOrClose = useCallback(() => {
+    if (priceEditTarget) {
+      setPriceEditTarget(null);
+      setManualPriceInput('');
+      return;
+    }
+    if (swapTarget) {
+      setSwapTarget(null);
+      return;
+    }
+    onClose();
+  }, [onClose, priceEditTarget, swapTarget]);
+
+  useModalAccessibility(open, panelRef, handleEscapeOrClose);
 
   if (!open) return null;
 
   const handleCepSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     hapticLight();
+    const cleanCep = cepInput.replace(/\D/g, '');
+    if (cleanCep.length !== 8) {
+      void searchByCepAndCompare(cepInput);
+      return;
+    }
     setEditingLocation(false);
     void searchByCepAndCompare(cepInput);
   };
@@ -319,7 +328,10 @@ export function PriceComparisonSheet({
 
           {/* Error */}
           {error && (
-            <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800 dark:bg-rose-950/50 dark:text-rose-200"
+            >
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -460,7 +472,7 @@ export function PriceComparisonSheet({
 
           {/* Aba 1: Ranking por loja única (vencedora unificada no card #1) */}
           {activeTab === 'single' && (
-            <>
+            <div role="tabpanel" aria-label="Comparação por loja">
               <div className="space-y-2">
                 {result.rankedStores.map((entry, idx) => {
                   const isWinner = idx === 0;
@@ -578,7 +590,7 @@ export function PriceComparisonSheet({
                             <div key={m.item.id} className="flex items-center justify-between gap-2 py-2.5">
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-xs font-bold text-zinc-800 dark:text-zinc-100">
-                                  {m.item.name} ({m.item.quantity} {m.item.unit})
+                                  {m.item.name} ({formatQuantity(m.item.quantity, m.item.unit)})
                                 </p>
                                 <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
                                   {m.candidate.productTitle}
@@ -726,173 +738,37 @@ export function PriceComparisonSheet({
                   )}
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {/* Aba 2: Melhor combinação em 2 lojas */}
-          {activeTab === 'split' && (
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              {result.bestSplit ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-bold uppercase text-emerald-700 dark:text-emerald-400">
-                        Economia extra de {formatBRL(result.bestSplit.savingsCents)} (
-                        {Math.round(result.bestSplit.savingsRatio * 100)}%)
-                      </p>
-                      <p className="text-sm font-extrabold text-zinc-900 dark:text-zinc-100">
-                        Total combinado: {formatBRL(result.bestSplit.totalCents)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid gap-2.5 sm:grid-cols-2">
-                    <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/70">
-                      <p className="text-xs font-extrabold text-zinc-900 dark:text-zinc-100">
-                        1. {result.bestSplit.storeA.name}
-                      </p>
-                      <ul className="mt-1.5 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
-                        {result.bestSplit.itemsA.map((m) => (
-                          <li key={m.item.id} className="flex justify-between gap-2">
-                            <span className="truncate">{m.item.name}</span>
-                            <span className="font-bold">{formatBRL(m.effectiveTotalCents)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/70">
-                      <p className="text-xs font-extrabold text-zinc-900 dark:text-zinc-100">
-                        2. {result.bestSplit.storeB.name}
-                      </p>
-                      <ul className="mt-1.5 space-y-1 text-xs text-zinc-600 dark:text-zinc-300">
-                        {result.bestSplit.itemsB.map((m) => (
-                          <li key={m.item.id} className="flex justify-between gap-2">
-                            <span className="truncate">{m.item.name}</span>
-                            <span className="font-bold">{formatBRL(m.effectiveTotalCents)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Dividir a compra em duas lojas não gera economia relevante (mínimo R$ 10,00 e 8%) em relação à melhor loja única.
-                </p>
-              )}
-            </div>
-          )}
+          {activeTab === 'split' && <SplitPurchaseTab bestSplit={result.bestSplit} />}
         </div>
 
         {/* Dock fixo para troca de produto/marca (sempre visível na Thumb-Zone) */}
         {swapTarget && (
-          <div className="border-t border-emerald-500/30 bg-white px-4 py-3 shadow-[0_-6px_20px_rgba(0,0,0,0.08)] dark:bg-zinc-900">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-extrabold text-zinc-900 dark:text-zinc-100">
-                Escolher produto para "{swapTarget.item.name}"
-              </p>
-              <button
-                type="button"
-                onClick={() => setSwapTarget(null)}
-                className="min-h-[38px] rounded-lg px-2.5 text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Fechar
-              </button>
-            </div>
-            <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto">
-              {swapTarget.alternatives.map((alt) => (
-                <button
-                  key={alt.productKey}
-                  type="button"
-                  onClick={() => {
-                    hapticSuccess();
-                    void selectPreferredProduct(swapTarget.item, alt);
-                    setSwapTarget(null);
-                    onShowToast('Preferência salva para futuras comparações!');
-                  }}
-                  className="flex min-h-[40px] w-full items-center justify-between rounded-xl border border-zinc-200 px-3 py-2 text-left text-xs hover:border-emerald-500 dark:border-zinc-700"
-                >
-                  <span className="truncate pr-2 font-medium text-zinc-800 dark:text-zinc-100">
-                    {alt.productTitle}
-                  </span>
-                  <span className="inline-flex shrink-0 items-center gap-1 font-extrabold text-emerald-700 dark:text-emerald-400">
-                    {formatBRL(alt.priceCents)}
-                    {alt.productKey === swapTarget.candidate.productKey && <Check className="h-3.5 w-3.5" />}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <ProductSwapDock
+            swapTarget={swapTarget}
+            onSelectAlternative={(item, alt) => {
+              void selectPreferredProduct(item, alt);
+              setSwapTarget(null);
+              onShowToast('Preferência salva para futuras comparações!');
+            }}
+            onClose={() => setSwapTarget(null)}
+          />
         )}
 
         {/* Dock fixo para ajuste manual de preço (sempre visível na Thumb-Zone) */}
         {priceEditTarget && (
-          <form
+          <ManualPriceDock
+            target={priceEditTarget}
+            manualPriceInput={manualPriceInput}
+            isSubmitting={isSubmittingPrice}
+            onChangeTarget={setPriceEditTarget}
+            onChangePriceInput={setManualPriceInput}
             onSubmit={(e) => void handleSaveManualPrice(e)}
-            className="border-t border-emerald-500/30 bg-white px-4 py-3 shadow-[0_-6px_20px_rgba(0,0,0,0.08)] dark:bg-zinc-900"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-extrabold text-zinc-900 dark:text-zinc-100">
-                Informar preço em {priceEditTarget.storeName}
-              </p>
-              <button
-                type="button"
-                onClick={() => setPriceEditTarget(null)}
-                className="min-h-[38px] rounded-lg px-2.5 text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Cancelar
-              </button>
-            </div>
-            {priceEditTarget.selectableItems && priceEditTarget.selectableItems.length > 1 ? (
-              <div className="mt-1.5">
-                <select
-                  aria-label="Selecionar item da lista"
-                  value={priceEditTarget.item.id}
-                  onChange={(e) => {
-                    const chosen = priceEditTarget.selectableItems?.find((i) => i.id === e.target.value);
-                    if (chosen) {
-                      setPriceEditTarget({
-                        ...priceEditTarget,
-                        item: chosen,
-                        packQuantity: 1,
-                        packUnit: chosen.unit || 'un',
-                      });
-                    }
-                  }}
-                  className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-2.5 text-sm font-medium text-zinc-900 focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                >
-                  {priceEditTarget.selectableItems.map((it) => (
-                    <option key={it.id} value={it.id}>
-                      {it.name} ({it.quantity} {it.unit})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                Preço da embalagem ({priceEditTarget.packQuantity} {priceEditTarget.packUnit}) —{' '}
-                {priceEditTarget.item.name}
-              </p>
-            )}
-            <div className="mt-2 flex gap-2">
-              <input
-                type="text"
-                inputMode="decimal"
-                autoFocus
-                value={manualPriceInput}
-                onChange={(e) => setManualPriceInput(e.target.value)}
-                placeholder="Ex.: 5,49"
-                aria-label="Preço em reais"
-                className="h-11 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-base text-zinc-900 focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-              />
-              <button
-                type="submit"
-                disabled={isSubmittingPrice}
-                className="h-11 rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white active:scale-95 disabled:opacity-50"
-              >
-                {isSubmittingPrice ? 'Salvando...' : 'Salvar preço'}
-              </button>
-            </div>
-          </form>
+            onCancel={() => setPriceEditTarget(null)}
+          />
         )}
 
         {/* Footer legal disclaimer com safe-area iOS */}

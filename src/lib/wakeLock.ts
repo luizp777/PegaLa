@@ -27,6 +27,7 @@ export function useWakeLock(onError?: (message: string) => void) {
   const [isActive, setIsActive] = useState(false);
   const sentinelRef = useRef<WakeLockSentinelLike | null>(null);
   const desiredActiveRef = useRef(false);
+  const mountedRef = useRef(true);
   const onErrorRef = useRef(onError);
 
   useEffect(() => {
@@ -35,22 +36,32 @@ export function useWakeLock(onError?: (message: string) => void) {
 
   const requestLock = useCallback(async (notifyOnFailure = false) => {
     if (!isSupported) return;
+    if (sentinelRef.current && !sentinelRef.current.released) return;
     try {
       const nav = navigator as Navigator & {
         wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> };
       };
       const sentinel = await nav.wakeLock?.request('screen');
       if (sentinel) {
+        if (!mountedRef.current || !desiredActiveRef.current) {
+          void sentinel.release().catch(() => {});
+          return;
+        }
         sentinelRef.current = sentinel;
         setIsActive(true);
         sentinel.addEventListener?.('release', () => {
-          setIsActive(false);
+          if (sentinelRef.current === sentinel) {
+            sentinelRef.current = null;
+            setIsActive(false);
+          }
         });
       }
     } catch (err) {
       uiLogger.debug('Falha ao solicitar Wake Lock de tela', serializeError(err));
       desiredActiveRef.current = false;
-      setIsActive(false);
+      if (mountedRef.current) {
+        setIsActive(false);
+      }
       if (notifyOnFailure) {
         onErrorRef.current?.('Não foi possível manter a tela acesa neste aparelho.');
       }
@@ -59,13 +70,14 @@ export function useWakeLock(onError?: (message: string) => void) {
 
   const releaseLock = useCallback(async () => {
     desiredActiveRef.current = false;
-    if (sentinelRef.current) {
+    const current = sentinelRef.current;
+    sentinelRef.current = null;
+    if (current) {
       try {
-        await sentinelRef.current.release();
+        await current.release();
       } catch (err) {
         uiLogger.debug('Falha ao liberar Wake Lock (já liberado pelo sistema)', serializeError(err));
       }
-      sentinelRef.current = null;
     }
     setIsActive(false);
   }, []);
@@ -80,16 +92,24 @@ export function useWakeLock(onError?: (message: string) => void) {
   }, [releaseLock, requestLock]);
 
   useEffect(() => {
+    mountedRef.current = true;
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && desiredActiveRef.current) {
+      if (
+        document.visibilityState === 'visible' &&
+        desiredActiveRef.current &&
+        (!sentinelRef.current || sentinelRef.current.released)
+      ) {
         void requestLock();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
+      mountedRef.current = false;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (sentinelRef.current) {
-        void sentinelRef.current.release().catch(() => {});
+      const current = sentinelRef.current;
+      sentinelRef.current = null;
+      if (current) {
+        void current.release().catch(() => {});
       }
     };
   }, [requestLock]);

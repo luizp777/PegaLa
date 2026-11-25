@@ -179,7 +179,7 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
           transform: `translateX(${offsetX}px)`,
           transition: isSwiping ? 'none' : 'transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1)',
         }}
-        className={`group relative flex min-h-[58px] items-center gap-1.5 px-2.5 py-1.5 ${
+        className={`group relative flex min-h-[58px] touch-pan-y items-center gap-1.5 px-2.5 py-1.5 ${
           item.isChecked
             ? 'bg-zinc-50/90 dark:bg-zinc-950/70'
             : 'bg-white dark:bg-zinc-900'
@@ -207,7 +207,7 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
           <span
             className={`line-clamp-2 text-[15px] font-medium leading-tight ${
               item.isChecked
-                ? 'text-zinc-400 line-through dark:text-zinc-500'
+                ? 'text-zinc-500 line-through dark:text-zinc-400'
                 : 'text-zinc-900 dark:text-zinc-100'
             }`}
           >
@@ -218,14 +218,14 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
         {/* Right Controls: Direct 44px Stepper + Category Sheet Trigger + Desktop Hover Delete */}
         {!item.isChecked ? (
           <div className="flex shrink-0 items-center gap-0.5">
-            {/* Desktop hover delete button (mobile uses left swipe) */}
+            {/* Desktop hover / tablet touch delete button (mobile uses left swipe) */}
             <button
               type="button"
               onClick={() => {
                 hapticWarning();
                 onDelete(item);
               }}
-              className="hidden h-10 w-9 items-center justify-center rounded-xl text-zinc-400 opacity-0 transition hover:bg-red-50 hover:text-red-500 focus:opacity-100 group-hover:opacity-100 active:scale-95 dark:hover:bg-red-950/40 sm:flex"
+              className="hidden h-10 w-9 items-center justify-center rounded-xl text-zinc-400 transition hover:bg-red-50 hover:text-red-500 focus:opacity-100 active:scale-95 dark:hover:bg-red-950/40 sm:flex [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
               aria-label={`Remover ${item.name}`}
               title={`Remover ${item.name}`}
             >

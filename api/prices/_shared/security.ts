@@ -88,14 +88,20 @@ export async function authenticateRequest(req: Request): Promise<string | null> 
 }
 
 export function hashClientIp(req: Request): string {
-  const forwarded = req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? 'unknown';
-  const ip = forwarded.split(',')[0].trim();
-  const salt = process.env.PRICE_RATE_LIMIT_SALT || 'pegala-default-salt';
+  const vercelIp = req.headers.get('x-vercel-forwarded-for')?.split(',')[0]?.trim();
+  const realIp = req.headers.get('x-real-ip')?.trim();
+  const forwarded = req.headers.get('x-forwarded-for');
+  const forwardedParts = forwarded
+    ? forwarded.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  const ip = vercelIp || realIp || forwardedParts[forwardedParts.length - 1] || 'unknown';
+  const salt = process.env.PRICE_RATE_LIMIT_SALT || process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 16) || 'pegala-default-salt';
   return createHash('sha256').update(`${salt}:${ip}`).digest('hex').slice(0, 32);
 }
 
 /**
  * Executa rate limit atômico por janela deslizante de 1 hora via RPC `check_price_api_rate_limit`.
+ * Falha fechado (bloqueia) quando o Supabase está configurado mas a verificação de cota falha.
  */
 export async function checkRateLimit(bucketKey: string, maxPerHour: number): Promise<boolean> {
   const admin = createSupabaseAdmin();
@@ -108,10 +114,11 @@ export async function checkRateLimit(bucketKey: string, maxPerHour: number): Pro
     });
     if (error) {
       console.warn('[PegaLa:RateLimit] Falha na RPC check_price_api_rate_limit', error.message);
-      return true;
+      return false;
     }
     return data !== false;
-  } catch {
-    return true;
+  } catch (err) {
+    console.warn('[PegaLa:RateLimit] Exceção na RPC check_price_api_rate_limit', err);
+    return false;
   }
 }

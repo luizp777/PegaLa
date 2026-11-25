@@ -29,8 +29,18 @@ function decodeHtmlEntities(input: string): string {
       if (!decoded) return match;
       return name[0] === name[0].toUpperCase() ? decoded.toUpperCase() : decoded;
     })
-    .replace(/&#(\d+);/g, (_m, dec: string) => String.fromCodePoint(Number(dec)))
-    .replace(/&#x([0-9a-f]+);/gi, (_m, hex: string) => String.fromCodePoint(parseInt(hex, 16)));
+    .replace(/&#(\d+);/g, (match, dec: string) => {
+      const code = Number(dec);
+      return Number.isInteger(code) && code >= 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : match;
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) => {
+      const code = parseInt(hex, 16);
+      return Number.isInteger(code) && code >= 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : match;
+    });
 }
 
 export function parseJauServeHtml(

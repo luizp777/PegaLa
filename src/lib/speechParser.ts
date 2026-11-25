@@ -194,13 +194,26 @@ export function useVoiceInput(
 
   useEffect(() => {
     return () => {
-      recognitionRef.current?.abort();
+      const current = recognitionRef.current;
       recognitionRef.current = null;
+      if (current) {
+        current.onresult = null;
+        current.onerror = null;
+        current.onend = null;
+        current.abort();
+      }
     };
   }, []);
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
+    const current = recognitionRef.current;
+    recognitionRef.current = null;
+    if (current) {
+      current.onresult = null;
+      current.onerror = null;
+      current.onend = null;
+      current.stop();
+    }
     setIsListening(false);
     setInterimText('');
   }, []);
@@ -222,6 +235,7 @@ export function useVoiceInput(
       recognition.maxAlternatives = 1;
 
       recognition.onresult = (event) => {
+        if (recognitionRef.current !== recognition) return;
         let finalText = '';
         let interim = '';
         for (let i = 0; i < event.results.length; i++) {
@@ -241,6 +255,8 @@ export function useVoiceInput(
       };
 
       recognition.onerror = (ev) => {
+        if (recognitionRef.current !== recognition) return;
+        recognitionRef.current = null;
         setIsListening(false);
         setInterimText('');
         uiLogger.warn('Erro no reconhecimento de voz', { code: ev.error });
@@ -254,6 +270,8 @@ export function useVoiceInput(
       };
 
       recognition.onend = () => {
+        if (recognitionRef.current !== recognition) return;
+        recognitionRef.current = null;
         setIsListening(false);
         setInterimText('');
       };

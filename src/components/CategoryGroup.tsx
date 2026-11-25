@@ -64,7 +64,9 @@ export function CategoryGroup({
           type="button"
           onClick={handleToggleExpand}
           aria-expanded={expanded}
-          className="flex w-full items-center justify-between border-b border-zinc-100 bg-zinc-50/70 px-3.5 py-2.5 text-left transition hover:bg-zinc-100/70 dark:border-zinc-800/80 dark:bg-zinc-900 dark:hover:bg-zinc-800/70"
+          className={`flex w-full items-center justify-between bg-zinc-50/70 px-3.5 py-2.5 text-left transition hover:bg-zinc-100/70 dark:bg-zinc-900 dark:hover:bg-zinc-800/70 ${
+            expanded ? 'border-b border-zinc-100 dark:border-zinc-800/80' : ''
+          }`}
         >
           <span className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${category.colorClass}`}>
             <CategoryIcon categoryId={category.id} size="sm" />

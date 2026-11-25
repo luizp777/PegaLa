@@ -822,6 +822,7 @@ export async function syncListNow(listId: string): Promise<boolean> {
       pendingFlushRequested = true;
       return false;
     }
+    flushing = true;
     try {
       const user = await ensureSupabaseSession();
       if (!user) return false;
@@ -910,6 +911,8 @@ export async function syncListNow(listId: string): Promise<boolean> {
         error: serializeError(err),
       });
       return false;
+    } finally {
+      flushing = false;
     }
   });
 }
@@ -933,6 +936,7 @@ export function subscribeToListRealtime(listId: string): () => void {
   let cancelled = false;
   let realtimeConnected = false;
   let pullDebounceTimer: number | null = null;
+  let myChannel: typeof activeChannel = null;
 
   const schedulePull = () => {
     if (cancelled) return;
@@ -1022,7 +1026,7 @@ export function subscribeToListRealtime(listId: string): () => void {
         activeChannel = null;
       }
 
-      activeChannel = supabase
+      myChannel = supabase
         .channel(`list-sync-${listId}`)
         .on(
           'postgres_changes',
@@ -1097,10 +1101,11 @@ export function subscribeToListRealtime(listId: string): () => void {
           async (payload) => {
             try {
               if (payload.eventType === 'DELETE') {
-                await db.transaction('rw', db.lists, db.items, db.pendingSync, async () => {
+                await db.transaction('rw', db.lists, db.items, db.pendingSync, db.priceComparisons, async () => {
                   await db.items.where('listId').equals(listId).delete();
                   await db.lists.delete(listId);
                   await db.pendingSync.where('listId').equals(listId).delete();
+                  await db.priceComparisons.delete(listId);
                 });
               } else if (payload.eventType === 'UPDATE') {
                 const row = payload.new as RemoteListRow;
@@ -1143,6 +1148,7 @@ export function subscribeToListRealtime(listId: string): () => void {
             });
           }
         });
+      activeChannel = myChannel;
     } catch (err) {
       syncLogger.error('Falha ao inicializar assinatura Realtime', {
         listId,
@@ -1161,9 +1167,12 @@ export function subscribeToListRealtime(listId: string): () => void {
     document.removeEventListener('visibilitychange', handleVisibilityOrOnline);
     window.removeEventListener('online', handleVisibilityOrOnline);
     authSubscription.unsubscribe();
-    if (activeChannel && supabase) {
-      supabase.removeChannel(activeChannel);
-      activeChannel = null;
+    if (myChannel && supabase) {
+      supabase.removeChannel(myChannel);
+      if (activeChannel === myChannel) {
+        activeChannel = null;
+      }
+      myChannel = null;
     }
   };
 }

@@ -259,6 +259,9 @@ async function fetchOverpassStores(
   store_type: StoreType;
   lat: number;
   lng: number;
+  cep?: string | null;
+  city?: string | null;
+  neighborhood?: string | null;
 }>> {
   const radiusM = Math.min(Math.max(radiusKm, 1), 10) * 1000;
   const parts: string[] = [];
@@ -303,6 +306,9 @@ async function fetchOverpassStores(
         store_type: StoreType;
         lat: number;
         lng: number;
+        cep: string | null;
+        city: string | null;
+        neighborhood: string | null;
       }> = [];
 
       for (const el of data.elements ?? []) {
@@ -316,6 +322,12 @@ async function fetchOverpassStores(
           `${name} ${el.tags?.brand ?? ''} ${el.tags?.operator ?? ''}`,
           storeType
         );
+        const tagCep = (el.tags?.['addr:postcode'] ?? '').replace(/\D/g, '').slice(0, 8) || null;
+        const tagCity = el.tags?.['addr:city']?.trim().slice(0, 120) || null;
+        const tagNeighborhood =
+          el.tags?.['addr:suburb']?.trim().slice(0, 120) ||
+          el.tags?.['addr:neighbourhood']?.trim().slice(0, 120) ||
+          null;
 
         out.push({
           osm_id: `${el.type}/${el.id}`,
@@ -324,6 +336,9 @@ async function fetchOverpassStores(
           store_type: storeType,
           lat: roundCoord(elLat),
           lng: roundCoord(elLng),
+          cep: tagCep,
+          city: tagCity,
+          neighborhood: tagNeighborhood,
         });
       }
 
@@ -374,13 +389,21 @@ export default {
     const radiusKm = [1, 3, 5, 10].includes(Number(body.radiusKm))
       ? (Number(body.radiusKm) as 1 | 3 | 5 | 10)
       : 3;
-    const types: StoreType[] =
-      Array.isArray(body.types) && body.types.length > 0
-        ? body.types.filter((t): t is StoreType => t === 'mercado' || t === 'farmacia')
-        : ['mercado'];
+    const filteredTypes: StoreType[] = Array.isArray(body.types)
+      ? body.types.filter((t): t is StoreType => t === 'mercado' || t === 'farmacia')
+      : [];
+    const types: StoreType[] = filteredTypes.length > 0 ? filteredTypes : ['mercado'];
 
-    let lat = typeof body.lat === 'number' && Number.isFinite(body.lat) ? body.lat : NaN;
-    let lng = typeof body.lng === 'number' && Number.isFinite(body.lng) ? body.lng : NaN;
+    const rawLat = typeof body.lat === 'number' && Number.isFinite(body.lat) ? body.lat : NaN;
+    const rawLng = typeof body.lng === 'number' && Number.isFinite(body.lng) ? body.lng : NaN;
+    if (
+      (!Number.isNaN(rawLat) && (rawLat < -90 || rawLat > 90)) ||
+      (!Number.isNaN(rawLng) && (rawLng < -180 || rawLng > 180))
+    ) {
+      return jsonResponse({ error: 'Coordenadas geográficas inválidas.' }, 400);
+    }
+    let lat = rawLat;
+    let lng = rawLng;
     let cep = (body.cep ?? '').replace(/\D/g, '').slice(0, 8);
     let city = '';
     let neighborhood = '';
@@ -408,7 +431,6 @@ export default {
       return jsonResponse({ error: 'Informe um CEP válido ou coordenadas GPS.' }, 400);
     }
 
-    const geohash5 = encodeGeohash(lat, lng, 5);
     const admin = createSupabaseAdmin();
     if (!admin) {
       return jsonResponse({ error: 'Supabase não configurado no servidor.' }, 503);
@@ -457,11 +479,16 @@ export default {
       if (dedupedStores.length > 0) {
         const nowIso = new Date().toISOString();
         const payload = dedupedStores.map((s) => ({
-          ...s,
-          geohash5,
-          cep: cep || null,
-          city: city || null,
-          neighborhood: neighborhood || null,
+          osm_id: s.osm_id,
+          name: s.name,
+          chain_slug: s.chain_slug,
+          store_type: s.store_type,
+          lat: s.lat,
+          lng: s.lng,
+          geohash5: encodeGeohash(s.lat, s.lng, 5),
+          cep: s.cep ?? null,
+          city: s.city ?? (city || null),
+          neighborhood: s.neighborhood ?? null,
           fetched_at: nowIso,
           updated_at: nowIso,
         }));

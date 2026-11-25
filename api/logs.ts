@@ -1,3 +1,5 @@
+import { validateSameOrigin } from './prices/_shared/security.js';
+
 const MAX_BODY_BYTES = 8192;
 const ALLOWED_LEVELS = new Set(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']);
 
@@ -22,23 +24,15 @@ export default {
       });
     }
 
-    const origin = req.headers.get('origin');
-    const host = req.headers.get('host');
-    if (origin && host) {
-      try {
-        const originHost = new URL(origin).host;
-        if (originHost !== host) {
-          return new Response(JSON.stringify({ error: 'Forbidden Origin' }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-      } catch {
-        return new Response(JSON.stringify({ error: 'Invalid Origin' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
+    const originErr = validateSameOrigin(req);
+    if (originErr) return originErr;
+
+    const contentLength = Number(req.headers.get('content-length') ?? '0');
+    if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
+      return new Response(JSON.stringify({ error: 'Payload Too Large' }), {
+        status: 413,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const rawBody = await req.text();
@@ -62,14 +56,22 @@ export default {
         });
       }
 
+      let safeData: Record<string, unknown> | undefined;
+      if (parsed.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data)) {
+        const serializedData = JSON.stringify(parsed.data);
+        if (serializedData.length <= 2048) {
+          safeData = parsed.data as Record<string, unknown>;
+        }
+      }
+
       console.log(
         JSON.stringify({
           source: 'pegala-client',
-          timestamp: typeof parsed.timestamp === 'string' ? parsed.timestamp : new Date().toISOString(),
+          timestamp: new Date().toISOString(),
           level,
           logger,
           message,
-          ...(parsed.data && typeof parsed.data === 'object' ? { data: parsed.data } : {}),
+          ...(safeData ? { data: safeData } : {}),
         })
       );
 

@@ -277,7 +277,13 @@ export function scoreCandidateMatch(
 
   let hits = 0;
   for (const token of termTokens) {
-    if (titleTokens.some((tt) => tt === token || tt.startsWith(token) || token.startsWith(tt))) {
+    if (
+      titleTokens.some(
+        (tt) =>
+          tt === token ||
+          (token.length >= 3 && tt.length >= 3 && (tt.startsWith(token) || token.startsWith(tt)))
+      )
+    ) {
       hits += 1;
     }
   }

@@ -31,6 +31,8 @@ const LIST_TYPES: Array<{ id: ListType; label: string }> = [
 export function CreateListModal({ open, onClose, onCreate }: CreateListModalProps) {
   const [name, setName] = useState('');
   const [type, setType] = useState<ListType>('mercado');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useModalAccessibility(open, dialogRef, onClose);
@@ -39,11 +41,19 @@ export function CreateListModal({ open, onClose, onCreate }: CreateListModalProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    await onCreate(name.trim(), type);
-    setName('');
-    setType('mercado');
-    onClose();
+    if (!name.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      await onCreate(name.trim(), type);
+      setName('');
+      setType('mercado');
+      onClose();
+    } catch {
+      setErrorMessage('Não foi possível criar a lista. Tente novamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -120,12 +130,18 @@ export function CreateListModal({ open, onClose, onCreate }: CreateListModalProp
             </div>
           </div>
 
+          {errorMessage && (
+            <p role="alert" className="text-xs font-medium text-red-600 dark:text-red-400">
+              {errorMessage}
+            </p>
+          )}
+
           <button
             type="submit"
-            disabled={!name.trim()}
+            disabled={!name.trim() || isSubmitting}
             className="h-12 w-full rounded-xl bg-emerald-600 text-sm font-bold text-white transition hover:bg-emerald-500 active:scale-[0.99] disabled:opacity-40"
           >
-            Criar Lista
+            {isSubmitting ? 'Criando...' : 'Criar Lista'}
           </button>
         </form>
       </div>

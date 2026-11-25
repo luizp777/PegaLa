@@ -52,11 +52,14 @@ const UNIT_ALIASES: Record<string, string> = {
   cartela: 'cart',
   cartelas: 'cart',
   comp: 'comp',
+  comprimido: 'comp',
   comprimidos: 'comp',
   rolo: 'rolo',
   rolos: 'rolo',
   sache: 'sachê',
   saches: 'sachê',
+  sachê: 'sachê',
+  sachês: 'sachê',
   pote: 'pote',
   potes: 'pote',
   bandeja: 'bdj',
@@ -64,6 +67,8 @@ const UNIT_ALIASES: Record<string, string> = {
   bdj: 'bdj',
   maco: 'maço',
   macos: 'maço',
+  maço: 'maço',
+  maços: 'maço',
 };
 
 const UNIT_PATTERN = Object.keys(UNIT_ALIASES)

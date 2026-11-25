@@ -24,11 +24,12 @@ describe('useWakeLock', () => {
 
   it('acquires and releases screen wake lock and handles visibilitychange', async () => {
     const releaseMock = vi.fn().mockResolvedValue(undefined);
-    const requestMock = vi.fn().mockResolvedValue({
+    const sentinel = {
       released: false,
       release: releaseMock,
       addEventListener: vi.fn(),
-    });
+    };
+    const requestMock = vi.fn().mockResolvedValue(sentinel);
 
     Object.defineProperty(navigator, 'wakeLock', {
       configurable: true,
@@ -46,8 +47,15 @@ describe('useWakeLock', () => {
     expect(requestMock).toHaveBeenCalledWith('screen');
     expect(result.current.isActive).toBe(true);
 
-    // Re-acquires when returning to visible state
+    // Does not acquire a duplicate sentinel while the active one is still held
     act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(requestMock).toHaveBeenCalledTimes(1);
+
+    // Re-acquires when returning to visible state after browser released the sentinel
+    sentinel.released = true;
+    await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
     expect(requestMock).toHaveBeenCalledTimes(2);

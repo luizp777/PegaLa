@@ -175,14 +175,18 @@ export function usePinnedStore(params: {
       city: pinnedStore.city,
     };
 
+    const storesForComparison: NearbyStore[] = cache.stores.some((s) => s.id === storeObj.id)
+      ? cache.stores
+      : [...cache.stores, storeObj];
+
     const comparison = computePriceComparison({
-      stores: [storeObj],
+      stores: storesForComparison,
       items: allItems,
       candidates: cache.candidates,
       preferredByTerm: prefs,
     });
 
-    const entry = comparison.rankedStores[0];
+    const entry = comparison.rankedStores.find((r) => r.store.id === pinnedStore.id);
     if (!entry) {
       return {
         estimatedTotalCents: pinnedStore.fallbackTotalCents,

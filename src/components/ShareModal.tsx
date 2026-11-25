@@ -36,6 +36,7 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
   const [joinCode, setJoinCode] = useState('');
   const [joinStatus, setJoinStatus] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -198,7 +199,12 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
 
           {showQr && (
             <div className="mt-3 flex justify-center rounded-xl bg-white p-3">
-              <QRCodeSVG value={shareUrl} size={156} />
+              <QRCodeSVG
+                value={shareUrl}
+                size={156}
+                role="img"
+                aria-label={`QR Code para compartilhar a lista ${list.name}`}
+              />
             </div>
           )}
 
@@ -252,7 +258,9 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
             </button>
           </div>
           {joinStatus && (
-            <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">{joinStatus}</p>
+            <p role="alert" className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+              {joinStatus}
+            </p>
           )}
         </form>
 
@@ -260,8 +268,16 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
         <div className="border-t border-zinc-200 pt-3.5 dark:border-zinc-800">
           {!isSupabaseConfigured ? (
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Modo local ativo. Configure <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">VITE_SUPABASE_URL</code> e{' '}
-              <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">VITE_SUPABASE_ANON_KEY</code> na Vercel para ativar sincronização em tempo real e login Google.
+              {import.meta.env.DEV ? (
+                <>
+                  Modo local ativo. Configure{' '}
+                  <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">VITE_SUPABASE_URL</code> e{' '}
+                  <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">VITE_SUPABASE_ANON_KEY</code>{' '}
+                  para ativar sincronização em tempo real e login Google.
+                </>
+              ) : (
+                'Modo offline local ativo — suas listas ficam salvas com segurança neste aparelho.'
+              )}
             </p>
           ) : user ? (
             <div className="flex items-center justify-between">
@@ -273,29 +289,41 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
               </div>
               <button
                 type="button"
+                disabled={authBusy}
                 onClick={async () => {
-                  await signOutUser();
-                  setUser(null);
+                  setAuthBusy(true);
+                  try {
+                    await signOutUser();
+                    setUser(null);
+                  } finally {
+                    setAuthBusy(false);
+                  }
                 }}
-                className="flex items-center gap-1 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"
+                className="flex min-h-[40px] items-center gap-1 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300"
               >
                 <LogOut className="h-3.5 w-3.5" />
-                Sair
+                {authBusy ? 'Saindo...' : 'Sair'}
               </button>
             </div>
           ) : (
             <button
               type="button"
+              disabled={authBusy}
               onClick={async () => {
-                const { error } = await signInWithGoogle();
-                if (error) {
-                  setJoinStatus(`Não foi possível entrar com Google: ${error}`);
+                setAuthBusy(true);
+                try {
+                  const { error } = await signInWithGoogle();
+                  if (error) {
+                    setJoinStatus(`Não foi possível entrar com Google: ${error}`);
+                  }
+                } finally {
+                  setAuthBusy(false);
                 }
               }}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-zinc-300 bg-white text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             >
               <LogIn className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              Salvar listas com Google (opcional)
+              {authBusy ? 'Conectando...' : 'Salvar listas com Google (opcional)'}
             </button>
           )}
         </div>

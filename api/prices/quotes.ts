@@ -1,4 +1,9 @@
-import type { PriceQuoteCandidate, QuotesStreamEvent, QuoteTermInput } from '../../shared/priceTypes.js';
+import {
+  isPersistedStoreId,
+  type PriceQuoteCandidate,
+  type QuotesStreamEvent,
+  type QuoteTermInput,
+} from '../../shared/priceTypes.js';
 import { getEnabledAdapters } from './_adapters/index.js';
 import {
   authenticateRequest,
@@ -55,8 +60,6 @@ function mapDbRowToCandidate(row: StorePriceDbRow): PriceQuoteCandidate {
   };
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 async function runWithConcurrency<T>(
   tasks: Array<() => Promise<T>>,
   limit: number
@@ -109,7 +112,8 @@ export default {
     }
 
     const cleanCep = (body.cep ?? '').replace(/\D/g, '').slice(0, 8);
-    const cepPrefix = cleanCep.length >= 5 ? cleanCep.slice(0, 5) : '00000';
+    const hasRealCep = cleanCep.length >= 5;
+    const cepPrefix = hasRealCep ? cleanCep.slice(0, 5) : '00000';
     const city = typeof body.city === 'string' ? body.city.slice(0, 80) : undefined;
     const requestedChains = Array.isArray(body.chains)
       ? [...new Set(body.chains.filter((c): c is string => typeof c === 'string'))].slice(0, 12)
@@ -117,7 +121,7 @@ export default {
     const storeIds = Array.isArray(body.storeIds)
       ? [
           ...new Set(
-            body.storeIds.filter((s): s is string => typeof s === 'string' && UUID_RE.test(s))
+            body.storeIds.filter((s): s is string => typeof s === 'string' && isPersistedStoreId(s))
           ),
         ].slice(0, 12)
       : [];
@@ -142,10 +146,19 @@ export default {
 
     const encoder = new TextEncoder();
 
+    let streamClosed = false;
     const stream = new ReadableStream({
+      cancel() {
+        streamClosed = true;
+      },
       async start(controller) {
         const emit = (event: QuotesStreamEvent) => {
-          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+          if (streamClosed || req.signal.aborted) return;
+          try {
+            controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+          } catch {
+            streamClosed = true;
+          }
         };
 
         try {
@@ -161,7 +174,8 @@ export default {
               .in('store_id', storeIds)
               .in('normalized_term', uniqueTerms)
               .gt('expires_at', nowIso)
-              .limit(500);
+              .order('observed_at', { ascending: false })
+              .limit(1000);
             if (storeErr) {
               console.warn('[PegaLa:Quotes] Erro ao ler cache por loja', storeErr.message);
             } else if (storePrices) {
@@ -169,7 +183,7 @@ export default {
             }
           }
 
-          if (requestedChains.length > 0) {
+          if (requestedChains.length > 0 && hasRealCep) {
             const { data: onlinePrices, error: onlineErr } = await admin
               .from('store_prices')
               .select(
@@ -180,7 +194,8 @@ export default {
               .in('chain_slug', requestedChains)
               .in('normalized_term', uniqueTerms)
               .gt('expires_at', nowIso)
-              .limit(800);
+              .order('observed_at', { ascending: false })
+              .limit(1500);
             if (onlineErr) {
               console.warn('[PegaLa:Quotes] Erro ao ler cache online', onlineErr.message);
             } else if (onlinePrices) {
@@ -200,12 +215,29 @@ export default {
           const failedChainsSet = new Set<string>();
           const upsertBuffer = new Map<string, Record<string, unknown>>();
           const tasks: Array<() => Promise<void>> = [];
+          const deadlineMs = Date.now() + 8500;
+
+          const flushUpsertBuffer = async () => {
+            if (!hasRealCep || upsertBuffer.size === 0) return;
+            const batch = Array.from(upsertBuffer.values());
+            upsertBuffer.clear();
+            for (let i = 0; i < batch.length; i += 80) {
+              const chunk = batch.slice(i, i + 80);
+              const { error: upsertErr } = await admin.rpc('upsert_online_prices', {
+                p_rows: chunk,
+              });
+              if (upsertErr) {
+                console.warn('[PegaLa:Quotes] Falha ao gravar cache online em lote', upsertErr.message);
+              }
+            }
+          };
 
           for (const adapter of adapters) {
             for (const term of uniqueTerms) {
               if (cachedPairs.has(`${adapter.slug}:${term}`)) continue;
 
               tasks.push(async () => {
+                if (streamClosed || req.signal.aborted || Date.now() >= deadlineMs) return;
                 try {
                   const candidates = await adapter.search({
                     term,
@@ -219,24 +251,29 @@ export default {
                     candidates,
                   });
 
-                  for (const c of candidates) {
-                    const dedupeKey = `${c.chainSlug ?? ''}:${cepPrefix}:${c.normalizedTerm}:${c.productKey}`;
-                    upsertBuffer.set(dedupeKey, {
-                      store_id: null,
-                      chain_slug: c.chainSlug,
-                      cep_prefix: cepPrefix,
-                      normalized_term: c.normalizedTerm,
-                      product_key: c.productKey,
-                      product_title: c.productTitle,
-                      brand: c.brand ?? null,
-                      ean: c.ean ?? null,
-                      pack_quantity: c.packQuantity,
-                      pack_unit: c.packUnit,
-                      price_cents: c.priceCents,
-                      source: 'online',
-                      observed_at: c.observedAt,
-                      expires_at: c.expiresAt,
-                    });
+                  if (hasRealCep) {
+                    for (const c of candidates) {
+                      const dedupeKey = `${c.chainSlug ?? ''}:${cepPrefix}:${c.normalizedTerm}:${c.productKey}`;
+                      upsertBuffer.set(dedupeKey, {
+                        store_id: null,
+                        chain_slug: c.chainSlug,
+                        cep_prefix: cepPrefix,
+                        normalized_term: c.normalizedTerm,
+                        product_key: c.productKey,
+                        product_title: c.productTitle,
+                        brand: c.brand ?? null,
+                        ean: c.ean ?? null,
+                        pack_quantity: c.packQuantity,
+                        pack_unit: c.packUnit,
+                        price_cents: c.priceCents,
+                        source: 'online',
+                        observed_at: c.observedAt,
+                        expires_at: c.expiresAt,
+                      });
+                    }
+                    if (upsertBuffer.size >= 60) {
+                      await flushUpsertBuffer();
+                    }
                   }
                 } catch {
                   failedChainsSet.add(adapter.slug);
@@ -246,25 +283,20 @@ export default {
           }
 
           await runWithConcurrency(tasks, 6);
-
-          if (upsertBuffer.size > 0) {
-            const allRows = Array.from(upsertBuffer.values());
-            for (let i = 0; i < allRows.length; i += 80) {
-              const chunk = allRows.slice(i, i + 80);
-              const { error: upsertErr } = await admin.rpc('upsert_online_prices', {
-                p_rows: chunk,
-              });
-              if (upsertErr) {
-                console.warn('[PegaLa:Quotes] Falha ao gravar cache online em lote', upsertErr.message);
-              }
-            }
-          }
+          await flushUpsertBuffer();
 
           emit({ type: 'done', failedChains: Array.from(failedChainsSet) });
         } catch {
           emit({ type: 'done', failedChains: adapters.map((a) => a.slug) });
         } finally {
-          controller.close();
+          if (!streamClosed) {
+            streamClosed = true;
+            try {
+              controller.close();
+            } catch {
+              // Já fechado
+            }
+          }
         }
       },
     });
