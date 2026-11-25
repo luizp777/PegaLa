@@ -1,5 +1,5 @@
-import type { NearbyStore, StoreType } from '../../shared/priceTypes.ts';
-import { encodeGeohash, haversineKm, roundCoord } from './_shared/geohash.ts';
+import type { NearbyStore, StoreType } from '../../shared/priceTypes.js';
+import { encodeGeohash, haversineKm, roundCoord } from './_shared/geohash.js';
 import {
   authenticateRequest,
   checkRateLimit,
@@ -7,7 +7,7 @@ import {
   hashClientIp,
   jsonResponse,
   validateSameOrigin,
-} from './_shared/security.ts';
+} from './_shared/security.js';
 
 interface NearbyRequestBody {
   cep?: string;

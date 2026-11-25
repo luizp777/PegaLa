@@ -1,5 +1,5 @@
-import { parsePackFromTitle } from '../../../shared/packParser.ts';
-import type { PriceQuoteCandidate, StoreType } from '../../../shared/priceTypes.ts';
+import { parsePackFromTitle } from '../../../shared/packParser.js';
+import type { PriceQuoteCandidate, StoreType } from '../../../shared/priceTypes.js';
 
 export interface AdapterSearchContext {
   term: string;

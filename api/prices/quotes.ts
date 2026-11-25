@@ -1,5 +1,5 @@
-import type { PriceQuoteCandidate, QuotesStreamEvent, QuoteTermInput } from '../../shared/priceTypes.ts';
-import { getEnabledAdapters } from './_adapters/index.ts';
+import type { PriceQuoteCandidate, QuotesStreamEvent, QuoteTermInput } from '../../shared/priceTypes.js';
+import { getEnabledAdapters } from './_adapters/index.js';
 import {
   authenticateRequest,
   checkRateLimit,
@@ -7,7 +7,7 @@ import {
   hashClientIp,
   jsonResponse,
   validateSameOrigin,
-} from './_shared/security.ts';
+} from './_shared/security.js';
 
 interface QuotesRequestBody {
   cep?: string;

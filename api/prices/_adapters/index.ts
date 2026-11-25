@@ -1,8 +1,8 @@
-import { tausteAdapter } from './magentoAdapter.ts';
-import { confiancaAdapter } from './occAdapter.ts';
-import { jauServeAdapter } from './sfccAdapter.ts';
-import type { RetailAdapter } from './types.ts';
-import { createVtexAdapter } from './vtexAdapter.ts';
+import { tausteAdapter } from './magentoAdapter.js';
+import { confiancaAdapter } from './occAdapter.js';
+import { jauServeAdapter } from './sfccAdapter.js';
+import type { RetailAdapter } from './types.js';
+import { createVtexAdapter } from './vtexAdapter.js';
 
 const ALL_ADAPTERS: RetailAdapter[] = [
   // Mercados / Atacado / Hortifruti / Carnes

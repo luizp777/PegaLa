@@ -1,5 +1,5 @@
-import type { PriceQuoteCandidate, StoreType } from '../../../shared/priceTypes.ts';
-import { buildProductKey, parsePackServer, type AdapterSearchContext, type RetailAdapter } from './types.ts';
+import type { PriceQuoteCandidate, StoreType } from '../../../shared/priceTypes.js';
+import { buildProductKey, parsePackServer, type AdapterSearchContext, type RetailAdapter } from './types.js';
 
 interface VtexProductResponse {
   productId?: string;

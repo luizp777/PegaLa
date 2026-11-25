@@ -1,5 +1,5 @@
-import type { PriceQuoteCandidate } from '../../../shared/priceTypes.ts';
-import { buildProductKey, parsePackServer, type AdapterSearchContext, type RetailAdapter } from './types.ts';
+import type { PriceQuoteCandidate } from '../../../shared/priceTypes.js';
+import { buildProductKey, parsePackServer, type AdapterSearchContext, type RetailAdapter } from './types.js';
 
 interface OccRecord {
   records?: OccRecord[];
