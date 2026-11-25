@@ -2,9 +2,8 @@ import type { PriceQuoteCandidate, QuotesStreamEvent, QuoteTermInput } from '../
 import { getEnabledAdapters } from './_adapters/index.js';
 import {
   authenticateRequest,
-  buildSupabaseServiceHeaders,
   checkRateLimit,
-  getSupabaseServerConfig,
+  createSupabaseAdmin,
   hashClientIp,
   jsonResponse,
   validateSameOrigin,
@@ -57,12 +56,6 @@ function mapDbRowToCandidate(row: StorePriceDbRow): PriceQuoteCandidate {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function formatPostgrestIn(values: string[]): string {
-  return values
-    .map((v) => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`)
-    .join(',');
-}
 
 async function runWithConcurrency<T>(
   tasks: Array<() => Promise<T>>,
@@ -137,12 +130,10 @@ export default {
       return jsonResponse({ error: 'Nenhum item informado para comparação.' }, 400);
     }
 
-    const cfg = getSupabaseServerConfig();
-    if (!cfg) {
+    const admin = createSupabaseAdmin();
+    if (!admin) {
       return jsonResponse({ error: 'Supabase não configurado no servidor.' }, 503);
     }
-
-    const sbHeaders = buildSupabaseServiceHeaders(cfg.serviceKey);
 
     const adapters = getEnabledAdapters(requestedChains);
     const uniqueTerms = [...new Set(terms.map((t) => t.normalizedTerm.trim().toLowerCase()).filter(Boolean))];
@@ -159,33 +150,40 @@ export default {
         try {
           // 1. Cache-first no Supabase (preços online válidos + comunidade das lojas)
           const cachedCandidates: PriceQuoteCandidate[] = [];
-          const termsFilter = formatPostgrestIn(uniqueTerms);
 
           if (storeIds.length > 0) {
-            const storeFilter = formatPostgrestIn(storeIds);
-            const storeUrl =
-              `${cfg.url}/rest/v1/store_prices?store_id=in.(${encodeURIComponent(storeFilter)})` +
-              `&normalized_term=in.(${encodeURIComponent(termsFilter)})` +
-              `&expires_at=gt.${encodeURIComponent(nowIso)}&limit=500`;
-            const res = await fetch(storeUrl, { headers: sbHeaders, signal: AbortSignal.timeout(3500) });
-            if (res.ok) {
-              const rows = (await res.json()) as StorePriceDbRow[];
-              cachedCandidates.push(...rows.map(mapDbRowToCandidate));
+            const { data: storePrices, error: storeErr } = await admin
+              .from('store_prices')
+              .select(
+                'id, store_id, chain_slug, normalized_term, product_key, product_title, brand, ean, pack_quantity, pack_unit, price_cents, source, weight, observed_at, expires_at'
+              )
+              .in('store_id', storeIds)
+              .in('normalized_term', uniqueTerms)
+              .gt('expires_at', nowIso)
+              .limit(500);
+            if (storeErr) {
+              console.warn('[PegaLa:Quotes] Erro ao ler cache por loja', storeErr.message);
+            } else if (storePrices) {
+              cachedCandidates.push(...(storePrices as StorePriceDbRow[]).map(mapDbRowToCandidate));
             }
           }
 
           if (requestedChains.length > 0) {
-            const chainFilter = formatPostgrestIn(requestedChains);
-            const onlineUrl =
-              `${cfg.url}/rest/v1/store_prices?source=eq.online` +
-              `&cep_prefix=eq.${encodeURIComponent(cepPrefix)}` +
-              `&chain_slug=in.(${encodeURIComponent(chainFilter)})` +
-              `&normalized_term=in.(${encodeURIComponent(termsFilter)})` +
-              `&expires_at=gt.${encodeURIComponent(nowIso)}&limit=800`;
-            const res = await fetch(onlineUrl, { headers: sbHeaders, signal: AbortSignal.timeout(3500) });
-            if (res.ok) {
-              const rows = (await res.json()) as StorePriceDbRow[];
-              cachedCandidates.push(...rows.map(mapDbRowToCandidate));
+            const { data: onlinePrices, error: onlineErr } = await admin
+              .from('store_prices')
+              .select(
+                'id, store_id, chain_slug, normalized_term, product_key, product_title, brand, ean, pack_quantity, pack_unit, price_cents, source, weight, observed_at, expires_at'
+              )
+              .eq('source', 'online')
+              .eq('cep_prefix', cepPrefix)
+              .in('chain_slug', requestedChains)
+              .in('normalized_term', uniqueTerms)
+              .gt('expires_at', nowIso)
+              .limit(800);
+            if (onlineErr) {
+              console.warn('[PegaLa:Quotes] Erro ao ler cache online', onlineErr.message);
+            } else if (onlinePrices) {
+              cachedCandidates.push(...(onlinePrices as StorePriceDbRow[]).map(mapDbRowToCandidate));
             }
           }
 
@@ -237,14 +235,11 @@ export default {
                       expires_at: c.expiresAt,
                     }));
 
-                    const upsertRes = await fetch(`${cfg.url}/rest/v1/rpc/upsert_online_prices`, {
-                      method: 'POST',
-                      headers: sbHeaders,
-                      body: JSON.stringify({ p_rows: rows }),
-                      signal: AbortSignal.timeout(3500),
+                    const { error: upsertErr } = await admin.rpc('upsert_online_prices', {
+                      p_rows: rows,
                     });
-                    if (!upsertRes.ok) {
-                      console.warn('[PegaLa:Quotes] Falha ao gravar cache online', upsertRes.status);
+                    if (upsertErr) {
+                      console.warn('[PegaLa:Quotes] Falha ao gravar cache online', upsertErr.message);
                     }
                   }
                 } catch {

@@ -2,9 +2,8 @@ import type { NearbyStore, StoreType } from '../../shared/priceTypes.js';
 import { encodeGeohash, haversineKm, roundCoord } from './_shared/geohash.js';
 import {
   authenticateRequest,
-  buildSupabaseServiceHeaders,
   checkRateLimit,
-  getSupabaseServerConfig,
+  createSupabaseAdmin,
   hashClientIp,
   jsonResponse,
   validateSameOrigin,
@@ -410,39 +409,42 @@ export default {
     }
 
     const geohash5 = encodeGeohash(lat, lng, 5);
-    const cfg = getSupabaseServerConfig();
-    if (!cfg) {
+    const admin = createSupabaseAdmin();
+    if (!admin) {
       return jsonResponse({ error: 'Supabase não configurado no servidor.' }, 503);
     }
 
-    const sbHeaders = buildSupabaseServiceHeaders(cfg.serviceKey);
-
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600_000).toISOString();
-    const typesFilter = types.map((t) => `"${t}"`).join(',');
     const latDelta = (radiusKm + 1) / 111;
     const lngDelta = (radiusKm + 1) / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
-    const cacheUrl =
-      `${cfg.url}/rest/v1/stores?store_type=in.(${encodeURIComponent(typesFilter)})` +
-      `&lat=gte.${(lat - latDelta).toFixed(5)}&lat=lte.${(lat + latDelta).toFixed(5)}` +
-      `&lng=gte.${(lng - lngDelta).toFixed(5)}&lng=lte.${(lng + lngDelta).toFixed(5)}` +
-      `&fetched_at=gte.${encodeURIComponent(thirtyDaysAgo)}&limit=80`;
 
     let storeRows: StoreRow[] = [];
-    try {
-      const cacheRes = await fetch(cacheUrl, { headers: sbHeaders, signal: AbortSignal.timeout(3000) });
-      if (cacheRes.ok) {
-        storeRows = (await cacheRes.json()) as StoreRow[];
-      }
-    } catch {
-      // Cache miss fallback
+    const { data: cachedStores, error: cacheError } = await admin
+      .from('stores')
+      .select('id, osm_id, name, chain_slug, store_type, lat, lng, cep, city, neighborhood, fetched_at')
+      .in('store_type', types)
+      .gte('lat', lat - latDelta)
+      .lte('lat', lat + latDelta)
+      .gte('lng', lng - lngDelta)
+      .lte('lng', lng + lngDelta)
+      .gte('fetched_at', thirtyDaysAgo)
+      .limit(80);
+
+    if (cacheError) {
+      console.warn('[PegaLa:NearbyStores] Erro ao ler cache stores', cacheError.message);
+    } else if (cachedStores) {
+      storeRows = cachedStores as StoreRow[];
     }
 
     if (storeRows.length === 0) {
       // Popula sempre com raio de 10km para não prender a região em cache de raio menor
-      const osmStores = await fetchOverpassStores(lat, lng, 10, types);
-      if (osmStores.length > 0) {
+      const rawOsmStores = await fetchOverpassStores(lat, lng, 10, types);
+      const dedupedStores = Array.from(
+        new Map(rawOsmStores.map((s) => [s.osm_id, s])).values()
+      );
+      if (dedupedStores.length > 0) {
         const nowIso = new Date().toISOString();
-        const payload = osmStores.map((s) => ({
+        const payload = dedupedStores.map((s) => ({
           ...s,
           geohash5,
           cep: cep || null,
@@ -452,20 +454,15 @@ export default {
           updated_at: nowIso,
         }));
 
-        const upsertRes = await fetch(`${cfg.url}/rest/v1/stores?on_conflict=osm_id`, {
-          method: 'POST',
-          headers: {
-            ...sbHeaders,
-            Prefer: 'resolution=merge-duplicates,return=representation',
-          },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(4000),
-        });
-        if (upsertRes.ok) {
-          storeRows = (await upsertRes.json()) as StoreRow[];
+        const { data: upserted, error: upsertError } = await admin
+          .from('stores')
+          .upsert(payload, { onConflict: 'osm_id' })
+          .select('id, osm_id, name, chain_slug, store_type, lat, lng, cep, city, neighborhood, fetched_at');
+
+        if (!upsertError && upserted) {
+          storeRows = upserted as StoreRow[];
         } else {
-          console.warn('[PegaLa:NearbyStores] Falha ao salvar stores no Supabase', upsertRes.status);
-          // Ainda devolve as lojas descobertas para não deixar o usuário sem resposta
+          console.warn('[PegaLa:NearbyStores] Falha ao salvar stores no Supabase', upsertError?.message);
           storeRows = payload.map((p, idx) => ({
             id: `temp-${idx}-${p.osm_id}`,
             osm_id: p.osm_id,

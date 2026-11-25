@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -33,18 +34,19 @@ export function getSupabaseServerConfig(): { url: string; serviceKey: string } |
 }
 
 /**
- * Monta cabeçalhos compatíveis com chaves `sb_secret_...` (apenas `apikey`)
- * e chaves legadas JWT `eyJ...` (`apikey` + `Authorization: Bearer`).
+ * Cria um cliente Supabase server-only usando `SUPABASE_SERVICE_ROLE_KEY`
+ * (compatível tanto com `sb_secret_...` quanto com JWT legado `eyJ...`).
  */
-export function buildSupabaseServiceHeaders(serviceKey: string): Record<string, string> {
-  const headers: Record<string, string> = {
-    apikey: serviceKey,
-    'Content-Type': 'application/json',
-  };
-  if (serviceKey.startsWith('eyJ')) {
-    headers.Authorization = `Bearer ${serviceKey}`;
-  }
-  return headers;
+export function createSupabaseAdmin(): SupabaseClient | null {
+  const cfg = getSupabaseServerConfig();
+  if (!cfg) return null;
+  return createClient(cfg.url, cfg.serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
 }
 
 /**
@@ -88,22 +90,19 @@ export function hashClientIp(req: Request): string {
  * Executa rate limit atômico por janela deslizante de 1 hora via RPC `check_price_api_rate_limit`.
  */
 export async function checkRateLimit(bucketKey: string, maxPerHour: number): Promise<boolean> {
-  const cfg = getSupabaseServerConfig();
-  if (!cfg) return true;
+  const admin = createSupabaseAdmin();
+  if (!admin) return true;
 
   try {
-    const res = await fetch(`${cfg.url}/rest/v1/rpc/check_price_api_rate_limit`, {
-      method: 'POST',
-      headers: buildSupabaseServiceHeaders(cfg.serviceKey),
-      body: JSON.stringify({
-        p_bucket_key: bucketKey,
-        p_max_per_hour: maxPerHour,
-      }),
-      signal: AbortSignal.timeout(2500),
+    const { data, error } = await admin.rpc('check_price_api_rate_limit', {
+      p_bucket_key: bucketKey,
+      p_max_per_hour: maxPerHour,
     });
-    if (!res.ok) return true;
-    const allowed = (await res.json()) as unknown;
-    return allowed !== false;
+    if (error) {
+      console.warn('[PegaLa:RateLimit] Falha na RPC check_price_api_rate_limit', error.message);
+      return true;
+    }
+    return data !== false;
   } catch {
     return true;
   }
