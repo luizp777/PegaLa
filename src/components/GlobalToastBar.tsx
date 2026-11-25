@@ -16,23 +16,40 @@ export interface ToastState {
   priceItem?: ShoppingItem;
 }
 
+/**
+ * Propriedades do componente {@link GlobalToastBar}.
+ */
 interface GlobalToastBarProps {
+  /** Toast ativo no momento, ou `null` quando oculto. */
   toast: ToastState | null;
+  /** Restaura o último item excluído. */
   onUndoDelete: () => void;
+  /** Restaura os itens desmarcados ao recomeçar a lista. */
   onUndoRestart: () => void;
+  /** Abre a captura rápida de preço para o item recém-marcado. */
   onOpenQuickPrice: (item: ShoppingItem) => void;
+  /** Item selecionado para captura rápida de preço na loja fixada. */
   quickPriceItem: ShoppingItem | null;
+  /** Estabelecimento fixado na lista ativa. */
   pinnedStore: PinnedStoreSelection | null;
+  /** Valor digitado no input de preço rápido. */
   quickPriceValue: string;
+  /** Indica se o envio do preço rápido está em andamento. */
   isSavingQuickPrice: boolean;
+  /** Atualiza o valor digitado no input de preço rápido. */
   onQuickPriceValueChange: (value: string) => void;
+  /** Envia o preço rápido para o Supabase. */
   onSubmitQuickPrice: (e: React.FormEvent) => void;
+  /** Fecha a barra de captura rápida de preço. */
   onCloseQuickPrice: () => void;
 }
 
 /**
  * Camada global de notificações (toast com Desfazer / + Preço) e barra de captura rápida de preço,
  * renderizada acima dos modais (`z-[60]`).
+ *
+ * @param props - Propriedades da camada global de notificações e preço rápido.
+ * @returns Elementos flutuantes de toast e formulário rápido de preço.
  */
 export function GlobalToastBar({
   toast,

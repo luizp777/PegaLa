@@ -4,22 +4,39 @@ import type { ShoppingList } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { ListTypeIcon } from './ItemIcon';
 
+/**
+ * Propriedades do componente {@link ListSwitcherMenu}.
+ */
 interface ListSwitcherMenuProps {
+  /** Todas as listas de compras disponíveis no aparelho. */
   lists: ShoppingList[];
+  /** UUID da lista ativa no momento. */
   activeListId: string | undefined;
+  /** ID do usuário autenticado no Supabase, ou `null`. */
   currentUserId: string | null;
+  /** Indica se a consulta inicial de sessão já foi concluída. */
   sessionLoaded: boolean;
+  /** Callback acionado ao selecionar outra lista. */
   onSelectList: (id: string) => void;
+  /** Callback acionado ao salvar o novo nome de uma lista. */
   onRenameList: (id: string, newName: string) => void;
+  /** Abre o modal de criação de nova lista. */
   onOpenCreateList: () => void;
+  /** Exclui uma lista como proprietário. */
   onDeleteList: (id: string) => void;
+  /** Remove a participação do usuário em uma lista compartilhada. */
   onLeaveList: (id: string) => void;
+  /** Copia o relatório técnico de diagnóstico (sem PII). */
   onCopyDiagnostics?: () => void;
+  /** Fecha o menu suspenso. */
   onClose: () => void;
 }
 
 /**
  * Menu suspenso de gerenciamento de listas (seleção, renomeação inline, exclusão/saída e diagnóstico).
+ *
+ * @param props - Propriedades de controle do menu de listas.
+ * @returns Elemento `<div>` com `role="menu"` renderizado.
  */
 export function ListSwitcherMenu({
   lists,

@@ -10,23 +10,39 @@ import type { ShoppingItem } from '../../types';
  * Alvo ativo para edição ou registro manual de preço em uma loja específica.
  */
 export interface PriceEditTarget {
+  /** UUID da loja no Supabase. */
   storeId: string;
+  /** Nome legível da loja. */
   storeName: string;
+  /** Item da lista associado ao registro de preço. */
   item: ShoppingItem;
+  /** Lista opcional de itens selecionáveis quando a loja não possui cotações. */
   selectableItems?: ShoppingItem[];
+  /** Título opcional do produto específico encontrado na loja. */
   currentTitle?: string;
+  /** Quantidade da embalagem informada. */
   packQuantity: number;
+  /** Unidade da embalagem informada. */
   packUnit: string;
 }
 
+/**
+ * Propriedades do componente {@link ProductSwapDock}.
+ */
 interface ProductSwapDockProps {
+  /** Item pareado na loja com suas alternativas disponíveis. */
   swapTarget: MatchedStoreItem;
+  /** Callback acionado ao escolher um produto alternativo preferido. */
   onSelectAlternative: (item: ShoppingItem, alt: PriceQuoteCandidate) => void;
+  /** Fecha o dock de troca de produto. */
   onClose: () => void;
 }
 
 /**
  * Dock fixo na zona do polegar para trocar o produto/marca selecionado em um item da comparação.
+ *
+ * @param props - Propriedades do dock de troca de produto.
+ * @returns Painel inferior de seleção de marca/produto.
  */
 export function ProductSwapDock({
   swapTarget,
@@ -72,18 +88,31 @@ export function ProductSwapDock({
   );
 }
 
+/**
+ * Propriedades do componente {@link ManualPriceDock}.
+ */
 interface ManualPriceDockProps {
+  /** Alvo da loja e item para registro colaborativo de preço. */
   target: PriceEditTarget;
+  /** Valor digitado no campo de preço. */
   manualPriceInput: string;
+  /** Indica se a submissão para a RPC está em andamento. */
   isSubmitting: boolean;
+  /** Atualiza o alvo selecionado (ex.: ao trocar item em loja vazia). */
   onChangeTarget: (next: PriceEditTarget) => void;
+  /** Atualiza o texto digitado no campo de preço. */
   onChangePriceInput: (value: string) => void;
+  /** Submete o preço manual para a RPC `report_community_price`. */
   onSubmit: (e: React.FormEvent) => void;
+  /** Cancela e fecha o dock de preço manual. */
   onCancel: () => void;
 }
 
 /**
  * Dock fixo na zona do polegar para informar ou corrigir um preço colaborativo em uma loja.
+ *
+ * @param props - Propriedades do dock de preço manual.
+ * @returns Formulário inferior para envio de preço colaborativo.
  */
 export function ManualPriceDock({
   target,

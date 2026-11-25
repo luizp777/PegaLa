@@ -2,6 +2,27 @@
 
 ---
 
+## Ciclo 11 — Code Review & Design (UI/UX) Review Geral + Hardening + Refatoração
+
+> **Status**: Concluído (Sprints 1–3, Migrations Supabase & Fixes de Produção concluídos)
+> **Data de conclusão**: 2026-11-25
+
+### Segurança, Banco de Dados & APIs Serverless
+- [x] **C11-01. Hardening de Rate Limit e Permissões RPC** (`api/prices/_shared/security.ts`, `supabase/migrations/20261125000002_review_hardening.sql`, `supabase/migrations/20261125000003_grant_service_role_price_rpcs.sql`): `x-vercel-forwarded-for`/`x-real-ip` no hash de IP, política *fail-closed* em `checkRateLimit`, `pg_advisory_xact_lock` anti-TOCTOU, índices em `created_at`/`attempted_at` e `GRANT EXECUTE ... TO service_role` para `check_price_api_rate_limit` e `upsert_online_prices`.
+- [x] **C11-02. Trigger de `lists` e Normalização de Outliers SQL** (`20261125000002_review_hardening.sql`): liberação de `ON DELETE SET NULL` em `trg_lists_guard_immutable`, bounds `lat`/`lng` em `stores`, proteção de `product_key` vazio em `upsert_online_prices` e conversão de unidades base (`kg`/`g`, `L`/`ml`) na detecção de outliers.
+- [x] **C11-03. Correções em `/api/prices/*` e `/api/logs`** (`api/prices/nearby-stores.ts`, `api/prices/quotes.ts`, `api/logs.ts`, `api/prices/_adapters/*`, `shared/packParser.ts`): `geohash5` e metadados calculados por loja no Overpass, flush incremental + orçamento de tempo + tratamento de desconexão em `quotes.ts`, guarda de `Content-Length` e timestamp do servidor em `logs.ts`, suporte a multipacks (`6x350ml`) e fallback hash em `buildProductKey`.
+
+### Confiabilidade de Hooks, Sync, PWA & Parser
+- [x] **C11-04. Mediana regional na loja fixada e races assíncronas** (`src/hooks/usePinnedStore.ts`, `src/hooks/usePriceComparison.ts`, `src/lib/wakeLock.ts`, `src/lib/speechParser.ts`): `usePinnedStore` passa todas as `cache.stores` para calcular faltantes pela mediana regional; proteção contra abort/cache race em `usePriceComparison`; proteção contra vazamento de sentinela no `wakeLock` e toggle rápido no reconhecimento de voz.
+- [x] **C11-05. Sync, IndexedDB, Workbox e Parser PT-BR** (`src/db/syncEngine.ts`, `src/db/localDb.ts`, `vite.config.ts`, `src/lib/itemParser.ts`, `src/lib/priceEngine.ts`, `src/lib/logger.ts`): flag `flushing` e ownership de `myChannel` em `syncEngine.ts`, limpeza de `priceComparisons` ao excluir/sair da lista, `recheckItems` para desfazer reinício, `navigateFallbackDenylist: [/^\/api\//]` no Workbox, suporte a `sachê`/`maço`/`comprimido`, prefix matching com `length >= 3` e sanitização de console no `logger.ts`.
+
+### UI/UX Mobile, Acessibilidade (WCAG AA) & Refatoração Arquitetural
+- [x] **C11-06. Correções P0/P1 de UX e Acessibilidade** (`QuickAddBar.tsx`, `GlobalToastBar.tsx`, `App.tsx`, `Header.tsx`, `ListSwitcherMenu.tsx`, `PinnedStoreBar.tsx`, `PriceComparisonSheet.tsx`, `ShareModal.tsx`, `CreateListModal.tsx`, `ShoppingItemRow.tsx`, `CategoryGroup.tsx`, `index.css`): `onClick` em vez de `onPointerDown` nas sugestões/pílulas, camada global de toasts `z-[60]` acima de modais, `z-index` do `Header`/`ListSwitcherMenu` acima da `PinnedStoreBar`, botão **"Desfazer"** no *"Recomeçar"*, `Escape` fechando docks antes do comparador, `touch-pan-y`, contraste WCAG AA em itens marcados, `prefers-reduced-motion` global e remoção de texto de infra em produção.
+- [x] **C11-07. Modularização e Tree-Shaking** (`src/lib/formatters.ts`, `src/lib/categories.ts`, `src/lib/dictionaryPtBr.ts`, `src/hooks/useAuthSession.ts`, `src/components/ListSwitcherMenu.tsx`, `src/components/GlobalToastBar.tsx`, `src/components/price-comparison/SplitPurchaseTab.tsx`, `src/components/price-comparison/PriceComparisonDocks.tsx`): extração de formatadores, categorias, sessão auth, menu de listas, toast global e subcomponentes do comparador (com atalho de rota em 2 lojas).
+- [x] **C11-08. Expansão da suíte de testes (105 testes em 21 arquivos)** (`usePinnedStore.test.ts`, `useAuthSession.test.ts`, `useModalAccessibility.test.tsx`, `QuickAddBar.test.tsx`, `packParserAndFormatters.test.ts`, `wakeLock.test.ts`).
+
+---
+
 ## Ciclo 10 — Precisão do Comparador, Loja Fixada na Lista & "Leve-me lá"
 
 > **Status**: Concluído (Hardening, Feature + Polimento Code/Design Review concluídos)

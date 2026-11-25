@@ -4,13 +4,20 @@ import { hapticLight } from '../../lib/haptics';
 import { buildNavigationUrl } from '../../lib/navigationLink';
 import type { PriceComparisonResult } from '../../lib/priceEngine';
 
+/**
+ * Propriedades do componente {@link SplitPurchaseTab}.
+ */
 interface SplitPurchaseTabProps {
+  /** Sugestão ótima de divisão em 2 lojas, ou `null` quando não há economia relevante. */
   bestSplit: PriceComparisonResult['bestSplit'];
 }
 
 /**
  * Aba "Dividir em 2 lojas" do comparador de preços, exibindo economia combinada,
  * itens por estabelecimento, distância e atalho direto de navegação.
+ *
+ * @param props - Propriedades da aba de divisão em duas lojas.
+ * @returns Painel de comparação dividida renderizado.
  */
 export function SplitPurchaseTab({ bestSplit }: SplitPurchaseTabProps) {
   return (
