@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  NearbyStore,
-  PreferredProduct,
-  PriceQuoteCandidate,
-  QuotesStreamEvent,
-  SavedPriceLocation,
-  StoreType,
+import {
+  isPersistedStoreId,
+  type NearbyStore,
+  type PreferredProduct,
+  type PriceQuoteCandidate,
+  type QuotesStreamEvent,
+  type SavedPriceLocation,
+  type StoreType,
 } from '../../shared/priceTypes';
 import {
   getPreferredProductsMap,
@@ -101,7 +102,9 @@ export function usePriceComparison(params: {
   const [stores, setStores] = useState<NearbyStore[]>([]);
   const [candidates, setCandidates] = useState<PriceQuoteCandidate[]>([]);
   const [preferredByTerm, setPreferredByTerm] = useState<Map<string, PreferredProduct>>(new Map());
-  const [includeChecked, setIncludeChecked] = useState(false);
+  const [includeChecked, setIncludeChecked] = useState(
+    () => pendingItems.length === 0 && checkedItems.length > 0
+  );
   const [isLoadingStores, setIsLoadingStores] = useState(false);
   const [isStreamingQuotes, setIsStreamingQuotes] = useState(false);
   const [streamProgress, setStreamProgress] = useState({ done: 0, total: 0 });
@@ -455,6 +458,9 @@ export function usePriceComparison(params: {
     }): Promise<{ ok: boolean; error?: string }> => {
       if (!supabase) {
         return { ok: false, error: 'Supabase não configurado.' };
+      }
+      if (!isPersistedStoreId(input.storeId)) {
+        return { ok: false, error: 'Loja temporária indisponível para registro colaborativo.' };
       }
 
       await ensureSupabaseSession();

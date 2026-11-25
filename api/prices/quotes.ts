@@ -79,7 +79,8 @@ async function runWithConcurrency<T>(
  */
 export default {
   async fetch(req: Request): Promise<Response> {
-    if (req.method !== 'POST') {
+    try {
+      if (req.method !== 'POST') {
       return jsonResponse({ error: 'Method Not Allowed' }, 405);
     }
 
@@ -218,25 +219,32 @@ export default {
                   });
 
                   if (candidates.length > 0) {
-                    const rows = candidates.map((c) => ({
-                      store_id: null,
-                      chain_slug: c.chainSlug,
-                      cep_prefix: cepPrefix,
-                      normalized_term: c.normalizedTerm,
-                      product_key: c.productKey,
-                      product_title: c.productTitle,
-                      brand: c.brand ?? null,
-                      ean: c.ean ?? null,
-                      pack_quantity: c.packQuantity,
-                      pack_unit: c.packUnit,
-                      price_cents: c.priceCents,
-                      source: 'online',
-                      observed_at: c.observedAt,
-                      expires_at: c.expiresAt,
-                    }));
+                    const dedupedRows = Array.from(
+                      new Map(
+                        candidates.map((c) => [
+                          c.productKey,
+                          {
+                            store_id: null,
+                            chain_slug: c.chainSlug,
+                            cep_prefix: cepPrefix,
+                            normalized_term: c.normalizedTerm,
+                            product_key: c.productKey,
+                            product_title: c.productTitle,
+                            brand: c.brand ?? null,
+                            ean: c.ean ?? null,
+                            pack_quantity: c.packQuantity,
+                            pack_unit: c.packUnit,
+                            price_cents: c.priceCents,
+                            source: 'online',
+                            observed_at: c.observedAt,
+                            expires_at: c.expiresAt,
+                          },
+                        ])
+                      ).values()
+                    );
 
                     const { error: upsertErr } = await admin.rpc('upsert_online_prices', {
-                      p_rows: rows,
+                      p_rows: dedupedRows,
                     });
                     if (upsertErr) {
                       console.warn('[PegaLa:Quotes] Falha ao gravar cache online', upsertErr.message);
@@ -266,5 +274,9 @@ export default {
         'Cache-Control': 'no-store',
       },
     });
+    } catch (err) {
+      console.error('[PegaLa:Quotes] Erro inesperado', err);
+      return jsonResponse({ error: 'Erro interno ao consultar cotações.' }, 500);
+    }
   },
 };

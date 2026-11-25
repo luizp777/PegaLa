@@ -33,20 +33,28 @@ export function getSupabaseServerConfig(): { url: string; serviceKey: string } |
   return { url: url.replace(/\/$/, ''), serviceKey };
 }
 
+let cachedAdmin: { key: string; client: SupabaseClient } | null = null;
+
 /**
- * Cria um cliente Supabase server-only usando `SUPABASE_SERVICE_ROLE_KEY`
+ * Cria (ou reutiliza) o cliente Supabase server-only usando `SUPABASE_SERVICE_ROLE_KEY`
  * (compatível tanto com `sb_secret_...` quanto com JWT legado `eyJ...`).
  */
 export function createSupabaseAdmin(): SupabaseClient | null {
   const cfg = getSupabaseServerConfig();
   if (!cfg) return null;
-  return createClient(cfg.url, cfg.serviceKey, {
+  const cacheKey = `${cfg.url}:${cfg.serviceKey}`;
+  if (cachedAdmin && cachedAdmin.key === cacheKey) {
+    return cachedAdmin.client;
+  }
+  const client = createClient(cfg.url, cfg.serviceKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
   });
+  cachedAdmin = { key: cacheKey, client };
+  return client;
 }
 
 /**

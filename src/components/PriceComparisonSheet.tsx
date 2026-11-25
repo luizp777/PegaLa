@@ -15,6 +15,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
+import { isPersistedStoreId } from '../../shared/priceTypes';
 import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import { usePriceComparison } from '../hooks/usePriceComparison';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
@@ -45,6 +46,11 @@ interface PriceComparisonSheetProps {
   onClose: () => void;
   /** Callback para exibir feedback toast no app. */
   onShowToast: (msg: string) => void;
+}
+
+function formatCepMask(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
 }
 
 function formatBRL(cents: number): string {
@@ -100,7 +106,7 @@ export function PriceComparisonSheet({
   } = usePriceComparison({ listId, listType, pendingItems, checkedItems });
 
   const [activeTab, setActiveTab] = useState<'single' | 'split'>('single');
-  const [cepInput, setCepInput] = useState(location?.cep ?? '');
+  const [cepInput, setCepInput] = useState(() => formatCepMask(location?.cep ?? ''));
   const [editingLocation, setEditingLocation] = useState(!location);
   const [expandedStoreId, setExpandedStoreId] = useState<string | null | undefined>(undefined);
   const [showEmptyStores, setShowEmptyStores] = useState(false);
@@ -200,6 +206,9 @@ export function PriceComparisonSheet({
                   type="button"
                   onClick={() => {
                     hapticLight();
+                    if (!editingLocation && location?.cep) {
+                      setCepInput(formatCepMask(location.cep));
+                    }
                     setEditingLocation((v) => !v);
                   }}
                   className="inline-flex min-h-[32px] items-center gap-1 font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
@@ -280,7 +289,7 @@ export function PriceComparisonSheet({
                     inputMode="numeric"
                     maxLength={9}
                     value={cepInput}
-                    onChange={(e) => setCepInput(e.target.value)}
+                    onChange={(e) => setCepInput(formatCepMask(e.target.value))}
                     placeholder="Ou digite o CEP (ex: 01310-100)"
                     aria-label="CEP"
                     className="h-11 min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-base text-zinc-900 focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 sm:text-sm"
@@ -450,6 +459,7 @@ export function PriceComparisonSheet({
                   const isExpanded =
                     expandedStoreId === undefined ? isWinner : expandedStoreId === entry.store.id;
                   const isShoppingHere = activeShoppingStore?.id === entry.store.id;
+                  const canContribute = isPersistedStoreId(entry.store.id);
                   return (
                     <div
                       key={entry.store.id}
@@ -512,7 +522,7 @@ export function PriceComparisonSheet({
 
                       {isExpanded && (
                         <div className="divide-y divide-zinc-100 border-t border-zinc-200/70 bg-white px-3.5 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-                          {onSelectShoppingStore && (
+                          {onSelectShoppingStore && canContribute && (
                             <div className="flex items-center justify-between gap-2 py-2.5">
                               <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
                                 {isShoppingHere
@@ -576,26 +586,28 @@ export function PriceComparisonSheet({
                                       Trocar marca
                                     </button>
                                   )}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      hapticLight();
-                                      setSwapTarget(null);
-                                      setPriceEditTarget({
-                                        storeId: entry.store.id,
-                                        storeName: entry.store.name,
-                                        item: m.item,
-                                        currentTitle: m.candidate.productTitle,
-                                        packQuantity: m.candidate.packQuantity,
-                                        packUnit: m.candidate.packUnit,
-                                      });
-                                      setManualPriceInput((m.candidate.priceCents / 100).toFixed(2).replace('.', ','));
-                                    }}
-                                    className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-zinc-100 px-2.5 text-[11px] font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-300"
-                                  >
-                                    <Edit3 className="h-3 w-3" />
-                                    Ajustar
-                                  </button>
+                                  {canContribute && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        hapticLight();
+                                        setSwapTarget(null);
+                                        setPriceEditTarget({
+                                          storeId: entry.store.id,
+                                          storeName: entry.store.name,
+                                          item: m.item,
+                                          currentTitle: m.candidate.productTitle,
+                                          packQuantity: m.candidate.packQuantity,
+                                          packUnit: m.candidate.packUnit,
+                                        });
+                                        setManualPriceInput((m.candidate.priceCents / 100).toFixed(2).replace('.', ','));
+                                      }}
+                                      className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-zinc-100 px-2.5 text-[11px] font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-300"
+                                    >
+                                      <Edit3 className="h-3 w-3" />
+                                      Ajustar
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                               <span className="shrink-0 text-xs font-extrabold text-zinc-900 dark:text-zinc-100">
@@ -610,24 +622,26 @@ export function PriceComparisonSheet({
                               className="flex items-center justify-between gap-2 py-2 text-xs text-zinc-500 dark:text-zinc-400"
                             >
                               <span className="truncate">{missing.name} — não encontrado</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  hapticLight();
-                                  setSwapTarget(null);
-                                  setPriceEditTarget({
-                                    storeId: entry.store.id,
-                                    storeName: entry.store.name,
-                                    item: missing,
-                                    packQuantity: 1,
-                                    packUnit: missing.unit || 'un',
-                                  });
-                                  setManualPriceInput('');
-                                }}
-                                className="inline-flex min-h-[32px] shrink-0 items-center rounded-lg bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 active:scale-95 dark:bg-emerald-950/50 dark:text-emerald-300"
-                              >
-                                + Preço
-                              </button>
+                              {canContribute && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    hapticLight();
+                                    setSwapTarget(null);
+                                    setPriceEditTarget({
+                                      storeId: entry.store.id,
+                                      storeName: entry.store.name,
+                                      item: missing,
+                                      packQuantity: 1,
+                                      packUnit: missing.unit || 'un',
+                                    });
+                                    setManualPriceInput('');
+                                  }}
+                                  className="inline-flex min-h-[32px] shrink-0 items-center rounded-lg bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 active:scale-95 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                >
+                                  + Preço
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -661,7 +675,7 @@ export function PriceComparisonSheet({
                           <span className="truncate">
                             {st.name} ({st.distanceKm} km)
                           </span>
-                          {pendingItems[0] && (
+                          {pendingItems[0] && isPersistedStoreId(st.id) && (
                             <button
                               type="button"
                               onClick={() => {
@@ -811,6 +825,7 @@ export function PriceComparisonSheet({
               <input
                 type="text"
                 inputMode="decimal"
+                autoFocus
                 value={manualPriceInput}
                 onChange={(e) => setManualPriceInput(e.target.value)}
                 placeholder="Ex.: 5,49"

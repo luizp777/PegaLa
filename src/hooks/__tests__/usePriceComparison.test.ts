@@ -233,7 +233,7 @@ describe('usePriceComparison', () => {
     let reportRes: { ok: boolean; error?: string } | undefined;
     await act(async () => {
       reportRes = await result.current.reportManualPrice({
-        storeId: 's1',
+        storeId: '11111111-1111-4111-8111-111111111111',
         item: sampleItem,
         priceCents: 950,
       });

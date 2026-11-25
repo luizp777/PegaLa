@@ -98,6 +98,14 @@ export interface SavedPriceLocation {
 }
 
 /**
+ * Verifica se o ID da loja é um UUID persistido no Supabase (descarta IDs temporários `temp-...`).
+ */
+export function isPersistedStoreId(id: string | null | undefined): boolean {
+  if (!id) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+/**
  * Snapshot bruto da última comparação salva no IndexedDB para uso offline.
  */
 export interface CachedPriceComparison {

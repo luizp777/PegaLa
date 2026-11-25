@@ -32,17 +32,17 @@ vi.mock('../../hooks/usePriceComparison', () => ({
   usePriceComparison: () => ({
     location: { cep: '01310100', label: 'Bela Vista, São Paulo', radiusKm: 3 },
     stores: [
-      { id: 's1', name: 'Mambo', chainSlug: 'mambo', storeType: 'mercado', lat: -23.5, lng: -46.6, distanceKm: 0.4 },
+      { id: '11111111-1111-4111-8111-111111111111', name: 'Mambo', chainSlug: 'mambo', storeType: 'mercado', lat: -23.5, lng: -46.6, distanceKm: 0.4 },
     ],
     result: {
       totalItems: 1,
       emptyStores: [
-        { id: 's2', name: 'Mercadinho Local', chainSlug: null, storeType: 'mercado', lat: -23.5, lng: -46.6, distanceKm: 0.2 },
+        { id: '22222222-2222-4222-8222-222222222222', name: 'Mercadinho Local', chainSlug: null, storeType: 'mercado', lat: -23.5, lng: -46.6, distanceKm: 0.2 },
       ],
       bestSplit: null,
       rankedStores: [
         {
-          store: { id: 's1', name: 'Mambo', chainSlug: 'mambo', storeType: 'mercado', lat: -23.5, lng: -46.6, distanceKm: 0.4 },
+          store: { id: '11111111-1111-4111-8111-111111111111', name: 'Mambo', chainSlug: 'mambo', storeType: 'mercado', lat: -23.5, lng: -46.6, distanceKm: 0.4 },
           matchedCount: 1,
           totalItems: 1,
           coverageRatio: 1,
@@ -176,7 +176,10 @@ describe('PriceComparisonSheet', () => {
     );
 
     fireEvent.click(screen.getByText('Estou comprando aqui'));
-    expect(onSelectStore).toHaveBeenCalledWith({ id: 's1', name: 'Mambo' });
+    expect(onSelectStore).toHaveBeenCalledWith({
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'Mambo',
+    });
 
     fireEvent.click(screen.getByText('Mambo'));
     expect(screen.queryByText('Trocar marca')).not.toBeInTheDocument();

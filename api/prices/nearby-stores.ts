@@ -436,9 +436,10 @@ export default {
       storeRows = cachedStores as StoreRow[];
     }
 
-    if (storeRows.length === 0) {
+    const missingTypes = types.filter((t) => !storeRows.some((s) => s.store_type === t));
+    if (missingTypes.length > 0) {
       // Popula sempre com raio de 10km para não prender a região em cache de raio menor
-      const rawOsmStores = await fetchOverpassStores(lat, lng, 10, types);
+      const rawOsmStores = await fetchOverpassStores(lat, lng, 10, missingTypes);
       const dedupedStores = Array.from(
         new Map(rawOsmStores.map((s) => [s.osm_id, s])).values()
       );
@@ -460,22 +461,27 @@ export default {
           .select('id, osm_id, name, chain_slug, store_type, lat, lng, cep, city, neighborhood, fetched_at');
 
         if (!upsertError && upserted) {
-          storeRows = upserted as StoreRow[];
+          const existingIds = new Set(storeRows.map((r) => r.id));
+          for (const row of upserted as StoreRow[]) {
+            if (!existingIds.has(row.id)) storeRows.push(row);
+          }
         } else {
           console.warn('[PegaLa:NearbyStores] Falha ao salvar stores no Supabase', upsertError?.message);
-          storeRows = payload.map((p, idx) => ({
-            id: `temp-${idx}-${p.osm_id}`,
-            osm_id: p.osm_id,
-            name: p.name,
-            chain_slug: p.chain_slug,
-            store_type: p.store_type,
-            lat: p.lat,
-            lng: p.lng,
-            cep: p.cep,
-            city: p.city,
-            neighborhood: p.neighborhood,
-            fetched_at: p.fetched_at,
-          }));
+          storeRows.push(
+            ...payload.map((p, idx) => ({
+              id: `temp-${idx}-${p.osm_id}`,
+              osm_id: p.osm_id,
+              name: p.name,
+              chain_slug: p.chain_slug,
+              store_type: p.store_type,
+              lat: p.lat,
+              lng: p.lng,
+              cep: p.cep,
+              city: p.city,
+              neighborhood: p.neighborhood,
+              fetched_at: p.fetched_at,
+            }))
+          );
         }
       }
     }
