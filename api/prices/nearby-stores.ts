@@ -173,6 +173,80 @@ async function reverseGeocodeCoords(lat: number, lng: number): Promise<{
   return { cep: '', city: '', neighborhood: '', label: 'Localização atual' };
 }
 
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
+
+async function fetchNominatimFallback(
+  lat: number,
+  lng: number,
+  types: StoreType[]
+): Promise<Array<{
+  osm_id: string;
+  name: string;
+  chain_slug: string | null;
+  store_type: StoreType;
+  lat: number;
+  lng: number;
+}>> {
+  const out: Array<{
+    osm_id: string;
+    name: string;
+    chain_slug: string | null;
+    store_type: StoreType;
+    lat: number;
+    lng: number;
+  }> = [];
+  const dLat = 0.08;
+  const dLng = 0.08;
+  const viewbox = `${(lng - dLng).toFixed(4)},${(lat + dLat).toFixed(4)},${(lng + dLng).toFixed(4)},${(lat - dLat).toFixed(4)}`;
+
+  for (const storeType of types) {
+    const q = storeType === 'farmacia' ? 'farmacia' : 'supermercado';
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=20&bounded=1&countrycodes=br&viewbox=${encodeURIComponent(viewbox)}&q=${q}`,
+        {
+          headers: { 'User-Agent': getOsmUserAgent() },
+          signal: AbortSignal.timeout(5000),
+        }
+      );
+      if (!res.ok) continue;
+      const items = (await res.json()) as Array<{
+        osm_type?: string;
+        osm_id?: number;
+        lat?: string;
+        lon?: string;
+        name?: string;
+        display_name?: string;
+      }>;
+      for (const el of items) {
+        const elLat = Number(el.lat);
+        const elLng = Number(el.lon);
+        const rawName = (el.name || el.display_name?.split(',')[0] || '').trim();
+        if (!rawName || !Number.isFinite(elLat) || !Number.isFinite(elLng)) continue;
+        const osmId =
+          el.osm_type && el.osm_id
+            ? `${el.osm_type}/${el.osm_id}`
+            : `nom/${roundCoord(elLat)}/${roundCoord(elLng)}`;
+        out.push({
+          osm_id: osmId,
+          name: rawName.slice(0, 160),
+          chain_slug: detectChainSlug(rawName, storeType),
+          store_type: storeType,
+          lat: roundCoord(elLat),
+          lng: roundCoord(elLng),
+        });
+      }
+    } catch {
+      // Continua para o próximo tipo
+    }
+  }
+
+  return out;
+}
+
 async function fetchOverpassStores(
   lat: number,
   lng: number,
@@ -189,68 +263,77 @@ async function fetchOverpassStores(
   const radiusM = Math.min(Math.max(radiusKm, 1), 10) * 1000;
   const parts: string[] = [];
   if (types.includes('mercado')) {
-    parts.push(`nwr["shop"~"supermarket|convenience|wholesale"](around:${radiusM},${lat},${lng});`);
+    parts.push(`nwr["shop"="supermarket"](around:${radiusM},${lat},${lng});`);
   }
   if (types.includes('farmacia')) {
     parts.push(`nwr["amenity"="pharmacy"](around:${radiusM},${lat},${lng});`);
   }
   if (parts.length === 0) return [];
 
-  const ql = `[out:json][timeout:10];(${parts.join('')});out center 60;`;
-  const res = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: {
-      'User-Agent': getOsmUserAgent(),
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: `data=${encodeURIComponent(ql)}`,
-    signal: AbortSignal.timeout(9000),
-  });
+  const ql = `[out:json][timeout:6];(${parts.join('')});out center 50;`;
 
-  if (!res.ok) return [];
-  const data = (await res.json()) as {
-    elements?: Array<{
-      type: string;
-      id: number;
-      lat?: number;
-      lon?: number;
-      center?: { lat: number; lon: number };
-      tags?: Record<string, string>;
-    }>;
-  };
+  for (const endpoint of OVERPASS_MIRRORS) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'User-Agent': getOsmUserAgent(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `data=${encodeURIComponent(ql)}`,
+        signal: AbortSignal.timeout(5500),
+      });
 
-  const out: Array<{
-    osm_id: string;
-    name: string;
-    chain_slug: string | null;
-    store_type: StoreType;
-    lat: number;
-    lng: number;
-  }> = [];
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        elements?: Array<{
+          type: string;
+          id: number;
+          lat?: number;
+          lon?: number;
+          center?: { lat: number; lon: number };
+          tags?: Record<string, string>;
+        }>;
+      };
 
-  for (const el of data.elements ?? []) {
-    const elLat = el.lat ?? el.center?.lat;
-    const elLng = el.lon ?? el.center?.lon;
-    const name = el.tags?.name?.trim() || el.tags?.brand?.trim();
-    if (!name || typeof elLat !== 'number' || typeof elLng !== 'number') continue;
+      const out: Array<{
+        osm_id: string;
+        name: string;
+        chain_slug: string | null;
+        store_type: StoreType;
+        lat: number;
+        lng: number;
+      }> = [];
 
-    const storeType: StoreType = el.tags?.amenity === 'pharmacy' ? 'farmacia' : 'mercado';
-    const chainSlug = detectChainSlug(
-      `${name} ${el.tags?.brand ?? ''} ${el.tags?.operator ?? ''}`,
-      storeType
-    );
+      for (const el of data.elements ?? []) {
+        const elLat = el.lat ?? el.center?.lat;
+        const elLng = el.lon ?? el.center?.lon;
+        const name = el.tags?.name?.trim() || el.tags?.brand?.trim();
+        if (!name || typeof elLat !== 'number' || typeof elLng !== 'number') continue;
 
-    out.push({
-      osm_id: `${el.type}/${el.id}`,
-      name: name.slice(0, 160),
-      chain_slug: chainSlug,
-      store_type: storeType,
-      lat: roundCoord(elLat),
-      lng: roundCoord(elLng),
-    });
+        const storeType: StoreType = el.tags?.amenity === 'pharmacy' ? 'farmacia' : 'mercado';
+        const chainSlug = detectChainSlug(
+          `${name} ${el.tags?.brand ?? ''} ${el.tags?.operator ?? ''}`,
+          storeType
+        );
+
+        out.push({
+          osm_id: `${el.type}/${el.id}`,
+          name: name.slice(0, 160),
+          chain_slug: chainSlug,
+          store_type: storeType,
+          lat: roundCoord(elLat),
+          lng: roundCoord(elLng),
+        });
+      }
+
+      if (out.length > 0) return out;
+    } catch {
+      // Tenta próximo mirror ou fallback Nominatim
+    }
   }
 
-  return out;
+  return fetchNominatimFallback(lat, lng, types);
 }
 
 /**
@@ -259,7 +342,8 @@ async function fetchOverpassStores(
  */
 export default {
   async fetch(req: Request): Promise<Response> {
-    if (req.method !== 'POST') {
+    try {
+      if (req.method !== 'POST') {
       return jsonResponse({ error: 'Method Not Allowed' }, 405);
     }
 
@@ -417,5 +501,9 @@ export default {
       },
       stores,
     });
+    } catch (err) {
+      console.error('[PegaLa:NearbyStores] Erro inesperado', err);
+      return jsonResponse({ error: 'Erro interno ao buscar lojas próximas.' }, 500);
+    }
   },
 };
