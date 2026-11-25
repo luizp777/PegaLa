@@ -108,7 +108,8 @@ export const jauServeAdapter: RetailAdapter = {
   displayName: 'Jaú Serve Supermercados',
   storeType: 'mercado',
   async search(ctx: AdapterSearchContext): Promise<PriceQuoteCandidate[]> {
-    const url = `https://www.jauserve.com.br/on/demandware.store/Sites-JauServe-Site/pt_BR/Search-ShowAjax?q=${encodeURIComponent(ctx.term)}`;
+    const searchTerm = ctx.query?.trim() || ctx.term;
+    const url = `https://www.jauserve.com.br/on/demandware.store/Sites-JauServe-Site/pt_BR/Search-ShowAjax?q=${encodeURIComponent(searchTerm)}`;
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; PegaLa/1.0)',

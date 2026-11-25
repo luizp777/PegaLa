@@ -25,7 +25,7 @@ Aplicativo **PWA (Progressive Web App) Offline-First** para lista ultra-rápida 
 - **Comparador de Preços (Mercado & Farmácia — Requer Supabase)**:
   - Descoberta de estabelecimentos próximos via **GPS** ou **CEP** (raio de `1`, `3`, `5` ou `10 km`) usando OpenStreetMap (Overpass/Nominatim) e ViaCEP.
   - Consulta híbrida com streaming progressivo (NDJSON): combina **preços online** de 10 redes brasileiras (Mambo, Oba Hortifruti, Swift, Sam's Club, Confiança, Tauste, Jaú Serve, Drogaria São Paulo, Drogarias Pacheco e Pague Menos) com **preços colaborativos** informados pela comunidade.
-  - Normalização automática de embalagens (`g`/`kg`, `ml`/`L`, multipacks `6x350ml`), filtros negativos por categoria (`hortifruti`/`acougue`), ranking por loja única, sugestão de divisão em 2 lojas (com distância e rota direta), troca de marca preferida, captura rápida `+ Preço` ao marcar itens no carrinho e cache offline no IndexedDB.
+  - Normalização automática de embalagens (`g`/`kg`, `ml`/`L`, multipacks `6x350ml`), janela ampliada de até 20 candidatos por rede com extração de departamento (`retail_category`), 40 aliases de busca/matching para nomenclatura de varejo (`shared/searchTermAliases.ts`), bloqueio rigoroso por categoria/guardas negativas, ranking em faixas (aderência de categoria/embalagem/título antes do menor preço), sugestão de divisão em 2 lojas (com distância e rota direta), troca de marca preferida (até 8 alternativas), captura rápida `+ Preço` ao marcar itens no carrinho e cache offline no IndexedDB.
   - **Estabelecimento Fixado & "Leve-me lá"**: ao clicar em *"Escolher esta loja"*, o estabelecimento fica fixado em barra sticky abaixo do cabeçalho (persistido por lista), recalculando em tempo real o total estimado e o subtotal *"No carrinho"*, com botão 1-toque **"Leve-me lá"** que abre o aplicativo de navegação nativo (`geo:` no Android, `maps://` no iOS e Google Maps no desktop).
 - **Offline-First + Sincronização em Tempo Real**:
   - Funciona 100% offline via **IndexedDB (Dexie.js)** com transações atômicas, fila de mutações coalescida em lotes e coordenação multi-aba via **Web Locks API** (inclusive na inicialização de listas padrão).
@@ -77,6 +77,7 @@ npm run test:e2e
      3. [`20261125000001_price_outlier_unit_fix.sql`](./supabase/migrations/20261125000001_price_outlier_unit_fix.sql) — normalização da mediana anti-outlier por unidade/embalagem na RPC `report_community_price`.
      4. [`20261125000002_review_hardening.sql`](./supabase/migrations/20261125000002_review_hardening.sql) — compatibilidade de `ON DELETE SET NULL` em `lists.owner_id`, advisory locks anti-TOCTOU, índices de rate limit, bounds `lat`/`lng` e conversão de unidades base (`kg`/`g`, `L`/`ml`) na detecção de outliers.
      5. [`20261125000003_grant_service_role_price_rpcs.sql`](./supabase/migrations/20261125000003_grant_service_role_price_rpcs.sql) — concessão explícita de `EXECUTE` para `service_role` nas RPCs server-only (`check_price_api_rate_limit` e `upsert_online_prices`).
+     6. [`20261125000004_retail_category_matching.sql`](./supabase/migrations/20261125000004_retail_category_matching.sql) — adiciona `retail_category` em `store_prices`, atualiza `store_prices_public` e `upsert_online_prices`, e limpa cache online antigo sem departamento.
 3. Em **Authentication → Sign In / Providers**, ative **Allow anonymous sign-ins** (obrigatório para sincronizar sem cadastro) e, opcionalmente, **Google OAuth**.
 4. Copie a **Project URL** e a **Publishable / Anon Key** em **Project Settings → API** e configure:
    - **Localmente**: crie `.env.local` (ignorado pelo Git) baseado em [`.env.example`](./.env.example):
@@ -90,4 +91,4 @@ Sem essas variáveis, o PegaLá opera automaticamente em modo **100% local (Offl
 
 ## Histórico de Evolução
 
-O detalhamento dos ciclos concluídos (Ciclos 1 a 12 — Segurança, Design Review, Code Review, Performance/Escala, Acessibilidade, Estabilidade, Engenharia/Infraestrutura, Comparador de Preços, Loja Fixada/Navegação, Hardening & Refatoração Geral e Otimização Extrema de Performance + Backup Local) está documentado em [`status.md`](./status.md).
+O detalhamento dos ciclos concluídos (Ciclos 1 a 13 — Segurança, Design Review, Code Review, Performance/Escala, Acessibilidade, Estabilidade, Engenharia/Infraestrutura, Comparador de Preços, Loja Fixada/Navegação, Hardening & Refatoração Geral, Otimização Extrema de Performance + Backup Local e Precisão de Busca/Matching do Comparador) está documentado em [`status.md`](./status.md).

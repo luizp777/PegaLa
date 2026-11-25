@@ -4,6 +4,7 @@ import type { PriceQuoteCandidate, StoreType } from '../../../shared/priceTypes.
 
 export interface AdapterSearchContext {
   term: string;
+  query?: string;
   cep: string;
   city?: string;
 }

@@ -2,6 +2,18 @@
 
 ---
 
+## Ciclo 13 — Precisão de Busca, Departamento do Varejista, Ranking em Faixas & Aliases de Catálogo
+
+> **Status**: Concluído (Migration Supabase + Adaptadores + Motor de Matching + 40 Aliases + Code Review + Validação completa)
+> **Data de conclusão**: 2026-11-25
+
+- [x] **C13-01. Coluna `retail_category` e limpeza de cache online antigo** (`supabase/migrations/20261125000004_retail_category_matching.sql`, `shared/priceTypes.ts`, `api/prices/quotes.ts`): adição da coluna opcional `retail_category` em `store_prices`, atualização da view `store_prices_public` (nova coluna ao final do `SELECT`) e da RPC `upsert_online_prices`, limpeza apenas de registros `source = 'online'` antigos (preservando preços da comunidade) e aumento dos limites de leitura de cache em `quotes.ts` (`1500`/`3000`).
+- [x] **C13-02. Janela de 20 candidatos e extração de departamento nos adaptadores** (`api/prices/_adapters/vtexAdapter.ts`, `occAdapter.ts`, `magentoAdapter.ts`, `sfccAdapter.ts`, `types.ts`): ampliação de 8 para 20 resultados por consulta em uma única chamada por `(rede, termo)`, extração de `retailCategory` em VTEX (`categories[0]`), OCC (`product.category` / `parentCategory.displayName`), Tauste/Magento (`categories { name }` com proteção contra `null`) e Jaú Serve (`data-product-category`/`data-category`).
+- [x] **C13-03. Compatibilidade de departamento, guardas expandidas e ranking em faixas** (`src/lib/priceEngine.ts`): `checkRetailCategoryCompatibility` com keywords no singular/plural bloqueando departamentos conflitantes (ex.: `/Mercearia/Salgadinhos/` para `hortifruti`), expansão de `CATEGORY_FORBIDDEN_TOKENS` (9 categorias) e `NEGATIVE_GUARD_RULES` (incluindo `cebola`, `alho`, `batata`, `tomate`, `feijao`, `milho` e `arroz`, com `unlessTermContains` para pedidos explícitos), ordenação em faixas (`isPreferred` → `categoryTier` → `packTier` → `titleTier` → `effectiveTotalCents`, sem penalizar pedidos pequenos `< 250g`) e até 8 alternativas na troca de produto.
+- [x] **C13-04. Aliases de busca e matching para 40 itens do catálogo PT-BR** (`shared/searchTermAliases.ts`, `api/prices/quotes.ts`, `src/lib/priceEngine.ts`): tradução automática entre termos do catálogo e títulos reais do varejo (ex.: `arroz branco` → `arroz tipo 1`, `queijo mussarela` ↔ `muçarela`, `macarrao espaguete/penne/parafuso` ↔ `massa ...`, congelados sem sufixo `congelado(a)`, `pasta de dente` → `creme dental`, `desodorante aerosol` ↔ `aerossol`, `racao/sache/petisco cachorro` → `cães`), validado com **117 testes em 22 arquivos** (`tsc -b`, Vitest e ESLint sem erros).
+
+---
+
 ## Ciclo 12 — Otimização Extrema de Performance, Backup Local & Qualidade de Vida
 
 > **Status**: Concluído (4 rodadas de performance + Backup/UX + Code Reviews + Validação completa)

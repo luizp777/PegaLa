@@ -72,7 +72,8 @@ export const confiancaAdapter: RetailAdapter = {
   displayName: 'Confiança Supermercados',
   storeType: 'mercado',
   async search(ctx: AdapterSearchContext): Promise<PriceQuoteCandidate[]> {
-    const url = `https://www.confianca.com.br/ccstoreui/v1/search?Ntt=${encodeURIComponent(ctx.term)}&Nrpp=20`;
+    const searchTerm = ctx.query?.trim() || ctx.term;
+    const url = `https://www.confianca.com.br/ccstoreui/v1/search?Ntt=${encodeURIComponent(searchTerm)}&Nrpp=20`;
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'PegaLa/1.0',

@@ -153,7 +153,8 @@ export function createVtexAdapter(config: {
         ? `vtex_segment=${Buffer.from(JSON.stringify({ regionId })).toString('base64')}`
         : '';
 
-      const url = `${config.host}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(ctx.term)}&_from=0&_to=19`;
+      const searchTerm = ctx.query?.trim() || ctx.term;
+      const url = `${config.host}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(searchTerm)}&_from=0&_to=19`;
       const res = await fetch(url, {
         headers: {
           'User-Agent': 'PegaLa/1.0',

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NearbyStore, PriceQuoteCandidate } from '../../../shared/priceTypes';
+import { resolveRetailSearchQuery } from '../../../shared/searchTermAliases';
 import type { ShoppingItem } from '../../types';
 import {
   checkRetailCategoryCompatibility,
@@ -115,6 +116,25 @@ describe('scoreCandidateMatch', () => {
     expect(checkRetailCategoryCompatibility('/Mercearia/Iogurte/', 'laticinios')).toBe('match');
     expect(checkRetailCategoryCompatibility('/Mercearia/Salgadinhos/', 'hortifruti')).toBe('conflict');
     expect(checkRetailCategoryCompatibility(null, 'hortifruti')).toBe('neutral');
+  });
+
+  it('usa aliases para arroz branco e outros itens do catálogo com nomenclatura diferente no varejo', () => {
+    expect(resolveRetailSearchQuery('arroz branco')).toBe('arroz tipo 1');
+    expect(resolveRetailSearchQuery('pasta de dente')).toBe('creme dental');
+    expect(resolveRetailSearchQuery('racao cachorro')).toBe('racao caes');
+    expect(resolveRetailSearchQuery('desodorante aerosol')).toBe('desodorante aerossol');
+    expect(scoreCandidateMatch('arroz branco', 'Tempero para Arroz Branco Sazón 60g', 'mercearia')).toBe(0);
+    expect(
+      scoreCandidateMatch('arroz branco', 'Strogonoff de Frango Perdigão Meu Menu com Arroz Branco 300g', 'mercearia')
+    ).toBe(0);
+    expect(scoreCandidateMatch('arroz branco', 'Arroz Integral Camil 1kg', 'mercearia')).toBe(0);
+    expect(scoreCandidateMatch('arroz branco', 'Arroz Tipo 1 Camil 5kg', 'mercearia')).toBeGreaterThan(0.9);
+    expect(scoreCandidateMatch('queijo mussarela', 'Queijo Muçarela Fatiado 150g', 'laticinios')).toBeGreaterThan(0.9);
+    expect(scoreCandidateMatch('macarrao espaguete', 'Massa com Ovos Espaguete Renata 500g', 'mercearia')).toBeGreaterThan(0.7);
+    expect(scoreCandidateMatch('pizza congelada', 'Pizza Sadia Calabresa 460g', 'congelados')).toBeGreaterThan(0.9);
+    expect(scoreCandidateMatch('pizza congelada', 'Massa para Pizza Rap10 300g', 'congelados')).toBe(0);
+    expect(scoreCandidateMatch('racao cachorro', 'Ração Pedigree para Cães Adultos 1kg', 'pet')).toBeGreaterThan(0.7);
+    expect(scoreCandidateMatch('desodorante aerosol', 'Desodorante Aerossol Rexona 150ml', 'higiene')).toBeGreaterThan(0.9);
   });
 });
 

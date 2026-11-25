@@ -5,6 +5,7 @@ import type {
   PriceQuoteCandidate,
   PriceSource,
 } from '../../shared/priceTypes';
+import { SEARCH_TERM_ALIASES } from '../../shared/searchTermAliases';
 import type { CategoryId, ShoppingItem } from '../types';
 import { normalizeText } from './categories';
 
@@ -89,7 +90,33 @@ const NEGATIVE_GUARD_RULES: Array<{
   },
   {
     trigger: 'arroz',
-    forbidden: ['doce', 'farinha', 'biscoito', 'bolacha', 'flocos'],
+    unlessTermContains: ['doce', 'tempero', 'farinha', 'biscoito', 'bolacha', 'vinagre', 'bebida', 'leite', 'strogonoff', 'prato', 'risoto'],
+    forbidden: [
+      'doce',
+      'farinha',
+      'biscoito',
+      'bolacha',
+      'flocos',
+      'tempero',
+      'sazon',
+      'caldo',
+      'strogonoff',
+      'estrogonofe',
+      'prato pronto',
+      'meu menu',
+      'escondidinho',
+      'feijoada',
+      'frango',
+      'carne',
+      'peixe',
+      'lasanha',
+      'risoto',
+      'salgadinho',
+      'snack',
+      'vinagre',
+      'bebida',
+      'leite de arroz',
+    ],
   },
   {
     trigger: 'cafe',
@@ -188,6 +215,11 @@ const NEGATIVE_GUARD_RULES: Array<{
       'sopa',
       'seco',
     ],
+  },
+  {
+    trigger: 'feijao',
+    unlessTermContains: ['tempero', 'caldo', 'prato', 'feijoada', 'salgadinho'],
+    forbidden: ['tempero', 'sazon', 'caldo', 'prato pronto', 'meu menu', 'salgadinho', 'snack'],
   },
   {
     trigger: 'milho',
@@ -566,30 +598,50 @@ export function scoreCandidateMatch(
     }
   }
 
-  const termTokens = tokenize(normTerm);
-  const titleTokens = tokenize(normTitle);
-  if (termTokens.length === 0 || titleTokens.length === 0) return 0;
-
-  let hits = 0;
-  for (const token of termTokens) {
-    if (
-      titleTokens.some(
-        (tt) =>
-          tt === token ||
-          (token.length >= 3 && tt.length >= 3 && (tt.startsWith(token) || token.startsWith(tt)))
-      )
-    ) {
-      hits += 1;
+  const aliasRule = SEARCH_TERM_ALIASES[normTerm];
+  if (aliasRule?.forbiddenInTitle) {
+    for (const bad of aliasRule.forbiddenInTitle) {
+      if (containsForbiddenTerm(normTitle, bad)) {
+        return 0;
+      }
     }
   }
 
-  const recall = hits / termTokens.length;
-  if (recall < 1 && termTokens.length <= 2) {
-    return recall * 0.4;
+  const titleTokens = tokenize(normTitle);
+  if (titleTokens.length === 0) return 0;
+
+  const candidateTerms = aliasRule?.matchTerms ?? [normTerm];
+  let bestScore = 0;
+
+  for (const candidateTerm of candidateTerms) {
+    const termTokens = tokenize(candidateTerm);
+    if (termTokens.length === 0) continue;
+
+    let hits = 0;
+    for (const token of termTokens) {
+      if (
+        titleTokens.some(
+          (tt) =>
+            tt === token ||
+            (token.length >= 3 && tt.length >= 3 && (tt.startsWith(token) || token.startsWith(tt)))
+        )
+      ) {
+        hits += 1;
+      }
+    }
+
+    const recall = hits / termTokens.length;
+    const termScore =
+      recall < 1 && termTokens.length <= 2
+        ? recall * 0.4
+        : Math.min(1, recall * 0.85 + (titleTokens[0] === termTokens[0] ? 0.15 : 0));
+
+    if (termScore > bestScore) {
+      bestScore = termScore;
+    }
   }
 
-  const firstTokenBoost = titleTokens[0] === termTokens[0] ? 0.15 : 0;
-  return Math.min(1, recall * 0.85 + firstTokenBoost);
+  return bestScore;
 }
 
 function isCandidateFresh(candidate: PriceQuoteCandidate, nowMs: number): boolean {
@@ -651,6 +703,7 @@ function selectCandidatesForStore(
   if (pool.length === 0) return null;
 
   const normTerm = normalizeText(item.normalizedName);
+  const matchPrefixes = SEARCH_TERM_ALIASES[normTerm]?.matchTerms ?? [normTerm];
   const itemBase = toBaseUnit(item.quantity, item.unit);
   const expectsLargePack =
     (item.categoryId === 'hortifruti' || itemBase.family === 'mass') &&
@@ -691,8 +744,8 @@ function selectCandidatesForStore(
       const categoryTier = retailMatch === 'match' ? 2 : 1;
 
       const normTitle = normalizeText(candidate.productTitle);
-      const titleTier =
-        normTitle.startsWith(normTerm) || score >= 0.9 ? 2 : score >= 0.7 ? 1 : 0;
+      const startsWithMatch = matchPrefixes.some((p) => normTitle.startsWith(p));
+      const titleTier = startsWithMatch || score >= 0.9 ? 2 : score >= 0.7 ? 1 : 0;
 
       const packBase = toBaseUnit(parsedPack.quantity, parsedPack.unit);
       const isTinyPack =

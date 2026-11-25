@@ -4,6 +4,7 @@ import {
   type QuotesStreamEvent,
   type QuoteTermInput,
 } from '../../shared/priceTypes.js';
+import { resolveRetailSearchQuery } from '../../shared/searchTermAliases.js';
 import { getEnabledAdapters } from './_adapters/index.js';
 import {
   authenticateRequest,
@@ -249,6 +250,7 @@ export default {
                 try {
                   const candidates = await adapter.search({
                     term,
+                    query: resolveRetailSearchQuery(term),
                     cep: cleanCep || '01310100',
                     city,
                   });

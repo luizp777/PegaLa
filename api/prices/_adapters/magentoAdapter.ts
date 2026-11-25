@@ -122,7 +122,7 @@ export const tausteAdapter: RetailAdapter = {
       },
       body: JSON.stringify({
         query,
-        variables: { term: ctx.term.trim() },
+        variables: { term: (ctx.query?.trim() || ctx.term).trim() },
       }),
       signal: AbortSignal.timeout(3500),
     });
