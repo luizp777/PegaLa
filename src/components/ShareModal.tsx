@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Link2, Lock, LogIn, LogOut, MessageCircle, QrCode, Users, X } from 'lucide-react';
+import { Check, ClipboardCopy, Copy, Link2, Lock, LogIn, LogOut, MessageCircle, QrCode, Users, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { User } from '@supabase/supabase-js';
 import type { ShoppingList } from '../types';
 import { db } from '../db/localDb';
-import { isSupabaseConfigured, signInWithGoogle, signOutUser, supabase } from '../lib/supabase';
+import { getSupabaseClient, isSupabaseConfigured, signInWithGoogle, signOutUser } from '../lib/supabase';
 import { serializeError, uiLogger } from '../lib/logger';
 import { joinSharedListByCode, syncListNow } from '../db/syncEngine';
 import { useModalAccessibility } from '../hooks/useModalAccessibility';
@@ -21,6 +21,10 @@ interface ShareModalProps {
   onClose: () => void;
   /** Callback acionado após ingressar com sucesso em uma lista compartilhada remota. */
   onJoinedList: (listId: string) => void;
+  /** Copia os itens pendentes formatados por corredor para colar no WhatsApp. */
+  onCopyListText?: () => void;
+  /** Quantidade de itens pendentes na lista ativa. */
+  pendingCount?: number;
 }
 
 /**
@@ -30,7 +34,14 @@ interface ShareModalProps {
  * @param props - Propriedades do modal de compartilhamento.
  * @returns Modal renderizado ou `null` quando fechado.
  */
-export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProps) {
+export function ShareModal({
+  open,
+  list,
+  onClose,
+  onJoinedList,
+  onCopyListText,
+  pendingCount = 0,
+}: ShareModalProps) {
   const [copiedTarget, setCopiedTarget] = useState<'code' | 'link' | null>(null);
   const [showQr, setShowQr] = useState(false);
   const [joinCode, setJoinCode] = useState('');
@@ -46,12 +57,14 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
   useModalAccessibility(open && Boolean(list), dialogRef, onClose);
 
   useEffect(() => {
-    if (!open || !supabase) return;
+    if (!open || !isSupabaseConfigured) return;
     let cancelled = false;
     if (listId) {
       void syncListNow(listId);
     }
-    void supabase.auth.getUser().then(({ data }) => {
+    void getSupabaseClient().then(async (client) => {
+      if (!client || cancelled) return;
+      const { data } = await client.auth.getUser();
       if (!cancelled) {
         setUser(data.user && !data.user.is_anonymous ? data.user : null);
       }
@@ -230,6 +243,17 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
               {copiedTarget === 'link' ? 'Link copiado' : 'Copiar Link'}
             </button>
           </div>
+          {onCopyListText && pendingCount > 0 && (
+            <button
+              type="button"
+              onClick={onCopyListText}
+              className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 active:scale-95 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+            >
+              <ClipboardCopy className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              Copiar texto por corredores ({pendingCount}{' '}
+              {pendingCount === 1 ? 'item' : 'itens'})
+            </button>
+          )}
         </div>
 
         {/* Join Another List */}

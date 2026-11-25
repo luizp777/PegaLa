@@ -1,351 +1,119 @@
-import { memo, type ComponentType } from 'react';
+import { memo, useEffect, useState, type ComponentType } from 'react';
 import {
-  Apple,
   Baby,
-  Banana,
   Bandage,
   Bath,
-  Battery,
-  Bean,
   Beef,
-  Beer,
-  Bone,
-  Brush,
-  Cake,
-  CakeSlice,
-  Candy,
-  Carrot,
-  Cat,
   Check,
-  Cherry,
-  Citrus,
   ClipboardList,
-  Coffee,
-  Cookie,
   Croissant,
   CupSoda,
-  Dog,
-  Donut,
-  Droplet,
-  Droplets,
-  Drumstick,
-  Egg,
-  Eye,
-  Fish,
-  Flame,
   Flower2,
-  GlassWater,
-  Grape,
-  Ham,
-  Hand,
-  IceCreamBowl,
-  IceCreamCone,
-  Leaf,
-  LeafyGreen,
-  Lightbulb,
-  Lollipop,
-  Martini,
   Milk,
-  MilkOff,
-  Nut,
   Package,
   PawPrint,
   Pill,
-  PillBottle,
-  Pizza,
-  Popcorn,
-  Salad,
-  Sandwich,
-  Scissors,
-  ShieldPlus,
   ShoppingBasket,
   ShoppingCart,
   Snowflake,
-  Soup,
   Sparkles,
-  SprayCan,
-  Stethoscope,
-  Sun,
-  Syringe,
-  Thermometer,
-  Toilet,
-  Trash2,
   Utensils,
-  Vegan,
-  Wheat,
-  Wine,
 } from 'lucide-react';
 import type { CategoryId, ListType } from '../types';
-import {
-  CATEGORY_ICON_THEME,
-  getItemMonogram,
-  getProductColorTheme,
-  resolveItemIcon,
-  type VectorIconKey,
-} from '../lib/itemIconMap';
-import {
-  BreadLoafIcon,
-  ButterDishIcon,
-  CheeseWedgeIcon,
-  DetergentBottleIcon,
-  DiaperIcon,
-  EyeDropsIcon,
-  LaundryBoxIcon,
-  NasalSprayIcon,
-  PastaBowlIcon,
-  RiceBagIcon,
-  SodaCanIcon,
-  SpongeIcon,
-  ToiletPaperIcon,
-  ToothbrushIcon,
-  ToothpasteIcon,
-} from './CustomProductIcons';
-import {
-  AvocadoIcon,
-  BellPepperIcon,
-  BroccoliIcon,
-  CoconutIcon,
-  CornIcon,
-  CucumberIcon,
-  EggplantIcon,
-  GarlicIcon,
-  KiwiIcon,
-  MangoIcon,
-  MushroomIcon,
-  OnionIcon,
-  PearIcon,
-  PineappleIcon,
-  PotatoIcon,
-  TomatoIcon,
-  WatermelonIcon,
-} from './icons/ProduceIcons';
-import {
-  BaconIcon,
-  BurgerIcon,
-  CheeseBreadIcon,
-  CoffeeCapsuleIcon,
-  JamJarIcon,
-  JuiceBoxIcon,
-  KetchupBottleIcon,
-  MilkCartonIcon,
-  OliveOilBottleIcon,
-  SaltShakerIcon,
-  SausageIcon,
-  TeaBagIcon,
-  YogurtCupIcon,
-} from './icons/FoodIcons';
-import {
-  BroomIcon,
-  CottonSwabIcon,
-  DeodorantIcon,
-  MouthwashIcon,
-  NailPolishIcon,
-  PerfumeBottleIcon,
-  RazorIcon,
-  SanitaryPadIcon,
-  ShampooBottleIcon,
-  SoapBarIcon,
-  SunscreenTubeIcon,
-} from './icons/CareIcons';
-import {
-  BabyBottleIcon,
-  BandageRollIcon,
-  CatLitterIcon,
-  FoilRollIcon,
-  HangerIcon,
-  PacifierIcon,
-  PetFoodBagIcon,
-  PillBlisterIcon,
-  SurgicalMaskIcon,
-  SyrupBottleIcon,
-} from './icons/HealthHomeIcons';
-import {
-  AerosolSprayIcon,
-  BakingPowderIcon,
-  BeetIcon,
-  CassavaIcon,
-  ChayoteIcon,
-  CondomPackIcon,
-  GingerIcon,
-  GlueTubeIcon,
-  HotWaterBagIcon,
-  PapayaIcon,
-  PassionFruitIcon,
-  PastryRollIcon,
-  PopsicleIcon,
-  ProbioticAmpouleIcon,
-  RapidTestIcon,
-  SerumDropperIcon,
-  SupplementTubIcon,
-  TapeRollIcon,
-  TapiocaIcon,
-  ToothpickBoxIcon,
-  TweezersIcon,
-  WhippedCreamIcon,
-} from './icons/ExtraProductIcons';
 
 type IconComponent = ComponentType<{ className?: string; strokeWidth?: number }>;
+type ProductIconPackModule = typeof import('./ProductIconPack');
 
-const VECTOR_ICON_COMPONENTS: Record<VectorIconKey, IconComponent> = {
-  aerosol_spray: AerosolSprayIcon,
-  apple: Apple,
-  avocado: AvocadoIcon,
-  baby: Baby,
-  baby_bottle: BabyBottleIcon,
-  bacon: BaconIcon,
-  baking_powder: BakingPowderIcon,
-  banana: Banana,
-  bandage: Bandage,
-  bandage_roll: BandageRollIcon,
-  bath: Bath,
-  battery: Battery,
-  bean: Bean,
-  beef: Beef,
-  beer: Beer,
-  beet: BeetIcon,
-  bell_pepper: BellPepperIcon,
-  bone: Bone,
-  bread_loaf: BreadLoafIcon,
-  broccoli: BroccoliIcon,
-  broom: BroomIcon,
-  brush: Brush,
-  burger: BurgerIcon,
-  butter_dish: ButterDishIcon,
-  cake: Cake,
-  cake_slice: CakeSlice,
-  candy: Candy,
-  carrot: Carrot,
-  cassava: CassavaIcon,
-  cat: Cat,
-  cat_litter: CatLitterIcon,
-  chayote: ChayoteIcon,
-  cheese_bread: CheeseBreadIcon,
-  cheese_wedge: CheeseWedgeIcon,
-  cherry: Cherry,
-  citrus: Citrus,
-  coconut: CoconutIcon,
-  coffee: Coffee,
-  coffee_capsule: CoffeeCapsuleIcon,
-  condom_pack: CondomPackIcon,
-  cookie: Cookie,
-  corn: CornIcon,
-  cotton_swab: CottonSwabIcon,
-  croissant: Croissant,
-  cucumber: CucumberIcon,
-  deodorant: DeodorantIcon,
-  detergent_bottle: DetergentBottleIcon,
-  diaper: DiaperIcon,
-  dog: Dog,
-  donut: Donut,
-  droplet: Droplet,
-  droplets: Droplets,
-  drumstick: Drumstick,
-  egg: Egg,
-  eggplant: EggplantIcon,
-  eye: Eye,
-  eye_drops: EyeDropsIcon,
-  fish: Fish,
-  flame: Flame,
-  flower: Flower2,
-  foil_roll: FoilRollIcon,
-  garlic: GarlicIcon,
-  ginger: GingerIcon,
-  glue_tube: GlueTubeIcon,
-  grape: Grape,
-  ham: Ham,
-  hand: Hand,
-  hanger: HangerIcon,
-  hot_water_bag: HotWaterBagIcon,
-  ice_cream_bowl: IceCreamBowl,
-  ice_cream_cone: IceCreamCone,
-  jam_jar: JamJarIcon,
-  juice_box: JuiceBoxIcon,
-  ketchup_bottle: KetchupBottleIcon,
-  kiwi: KiwiIcon,
-  laundry_box: LaundryBoxIcon,
-  leaf: Leaf,
-  leafy_green: LeafyGreen,
-  lightbulb: Lightbulb,
-  lollipop: Lollipop,
-  mango: MangoIcon,
-  martini: Martini,
-  milk: Milk,
-  milk_carton: MilkCartonIcon,
-  milk_off: MilkOff,
-  mouthwash: MouthwashIcon,
-  mushroom: MushroomIcon,
-  nail_polish: NailPolishIcon,
-  nasal_spray: NasalSprayIcon,
-  nut: Nut,
-  olive_oil_bottle: OliveOilBottleIcon,
-  onion: OnionIcon,
-  pacifier: PacifierIcon,
-  package: Package,
-  papaya: PapayaIcon,
-  passion_fruit: PassionFruitIcon,
-  pasta_bowl: PastaBowlIcon,
-  pastry_roll: PastryRollIcon,
-  paw: PawPrint,
-  pear: PearIcon,
-  perfume_bottle: PerfumeBottleIcon,
-  pet_food_bag: PetFoodBagIcon,
-  pill: Pill,
-  pill_blister: PillBlisterIcon,
-  pill_bottle: PillBottle,
-  pineapple: PineappleIcon,
-  pizza: Pizza,
-  popcorn: Popcorn,
-  popsicle: PopsicleIcon,
-  potato: PotatoIcon,
-  probiotic_ampoule: ProbioticAmpouleIcon,
-  rapid_test: RapidTestIcon,
-  razor: RazorIcon,
-  rice_bag: RiceBagIcon,
-  salad: Salad,
-  salt_shaker: SaltShakerIcon,
-  sandwich: Sandwich,
-  sanitary_pad: SanitaryPadIcon,
-  sausage: SausageIcon,
-  scissors: Scissors,
-  serum_dropper: SerumDropperIcon,
-  shampoo_bottle: ShampooBottleIcon,
-  shield_plus: ShieldPlus,
-  snowflake: Snowflake,
-  soap_bar: SoapBarIcon,
-  soda: CupSoda,
-  soda_can: SodaCanIcon,
-  soup: Soup,
-  sparkles: Sparkles,
-  sponge: SpongeIcon,
-  spray: SprayCan,
-  stethoscope: Stethoscope,
-  sun: Sun,
-  sunscreen_tube: SunscreenTubeIcon,
-  supplement_tub: SupplementTubIcon,
-  surgical_mask: SurgicalMaskIcon,
-  syringe: Syringe,
-  syrup_bottle: SyrupBottleIcon,
-  tape_roll: TapeRollIcon,
-  tapioca: TapiocaIcon,
-  tea_bag: TeaBagIcon,
-  thermometer: Thermometer,
-  toilet: Toilet,
-  toilet_paper: ToiletPaperIcon,
-  tomato: TomatoIcon,
-  toothbrush: ToothbrushIcon,
-  toothpaste: ToothpasteIcon,
-  toothpick_box: ToothpickBoxIcon,
-  trash: Trash2,
-  tweezers: TweezersIcon,
-  utensils: Utensils,
-  vegan: Vegan,
-  water: GlassWater,
-  watermelon: WatermelonIcon,
-  wheat: Wheat,
-  whipped_cream: WhippedCreamIcon,
-  wine: Wine,
-  yogurt_cup: YogurtCupIcon,
+interface CategoryIconTheme {
+  badgeClass: string;
+  strokeClass: string;
+}
+
+const CATEGORY_ICON_THEME: Record<CategoryId, CategoryIconTheme> = {
+  hortifruti: {
+    badgeClass: 'bg-emerald-500/12 border-emerald-500/25 dark:bg-emerald-500/15 dark:border-emerald-400/25',
+    strokeClass: 'text-emerald-600 dark:text-emerald-400',
+  },
+  padaria: {
+    badgeClass: 'bg-amber-500/12 border-amber-500/25 dark:bg-amber-500/15 dark:border-amber-400/25',
+    strokeClass: 'text-amber-600 dark:text-amber-400',
+  },
+  laticinios: {
+    badgeClass: 'bg-yellow-500/12 border-yellow-500/30 dark:bg-yellow-500/15 dark:border-yellow-400/25',
+    strokeClass: 'text-yellow-700 dark:text-yellow-400',
+  },
+  acougue: {
+    badgeClass: 'bg-rose-500/12 border-rose-500/25 dark:bg-rose-500/15 dark:border-rose-400/25',
+    strokeClass: 'text-rose-600 dark:text-rose-400',
+  },
+  mercearia: {
+    badgeClass: 'bg-orange-500/12 border-orange-500/25 dark:bg-orange-500/15 dark:border-orange-400/25',
+    strokeClass: 'text-orange-600 dark:text-orange-400',
+  },
+  congelados: {
+    badgeClass: 'bg-sky-500/12 border-sky-500/25 dark:bg-sky-500/15 dark:border-sky-400/25',
+    strokeClass: 'text-sky-600 dark:text-sky-400',
+  },
+  bebidas: {
+    badgeClass: 'bg-blue-500/12 border-blue-500/25 dark:bg-blue-500/15 dark:border-blue-400/25',
+    strokeClass: 'text-blue-600 dark:text-blue-400',
+  },
+  limpeza: {
+    badgeClass: 'bg-cyan-500/12 border-cyan-500/25 dark:bg-cyan-500/15 dark:border-cyan-400/25',
+    strokeClass: 'text-cyan-600 dark:text-cyan-400',
+  },
+  utilidades: {
+    badgeClass: 'bg-slate-500/12 border-slate-500/25 dark:bg-slate-500/15 dark:border-slate-400/25',
+    strokeClass: 'text-slate-600 dark:text-slate-400',
+  },
+  higiene: {
+    badgeClass: 'bg-teal-500/12 border-teal-500/25 dark:bg-teal-500/15 dark:border-teal-400/25',
+    strokeClass: 'text-teal-600 dark:text-teal-400',
+  },
+  dermocosmeticos: {
+    badgeClass: 'bg-fuchsia-500/12 border-fuchsia-500/25 dark:bg-fuchsia-500/15 dark:border-fuchsia-400/25',
+    strokeClass: 'text-fuchsia-600 dark:text-fuchsia-400',
+  },
+  medicamentos: {
+    badgeClass: 'bg-red-500/12 border-red-500/25 dark:bg-red-500/15 dark:border-red-400/25',
+    strokeClass: 'text-red-600 dark:text-red-400',
+  },
+  primeiros_socorros: {
+    badgeClass: 'bg-pink-500/12 border-pink-500/25 dark:bg-pink-500/15 dark:border-pink-400/25',
+    strokeClass: 'text-pink-600 dark:text-pink-400',
+  },
+  bebe: {
+    badgeClass: 'bg-violet-500/12 border-violet-500/25 dark:bg-violet-500/15 dark:border-violet-400/25',
+    strokeClass: 'text-violet-600 dark:text-violet-400',
+  },
+  pet: {
+    badgeClass: 'bg-purple-500/12 border-purple-500/25 dark:bg-purple-500/15 dark:border-purple-400/25',
+    strokeClass: 'text-purple-600 dark:text-purple-400',
+  },
+  outros: {
+    badgeClass: 'bg-zinc-500/10 border-zinc-400/30 dark:bg-zinc-500/15 dark:border-zinc-600/40',
+    strokeClass: 'text-zinc-600 dark:text-zinc-400',
+  },
 };
+
+let cachedIconPack: ProductIconPackModule | null = null;
+let iconPackPromise: Promise<ProductIconPackModule | null> | null = null;
+
+function loadProductIconPack(): Promise<ProductIconPackModule | null> {
+  if (cachedIconPack) return Promise.resolve(cachedIconPack);
+  if (!iconPackPromise) {
+    iconPackPromise = import('./ProductIconPack')
+      .then((m) => {
+        cachedIconPack = m;
+        return cachedIconPack;
+      })
+      .catch(() => {
+        iconPackPromise = null;
+        return null;
+      });
+  }
+  return iconPackPromise;
+}
 
 const CATEGORY_VECTOR_ICONS: Record<CategoryId, IconComponent> = {
   hortifruti: ShoppingBasket,
@@ -385,6 +153,8 @@ interface ItemIconProps {
 /**
  * Renderiza exclusivamente ícones vetoriais minimalistas (line-art duotone com cor semântica do produto)
  * para todos os itens do catálogo, ou um Monograma Minimalista para itens personalizados desconhecidos.
+ * Tanto as regras de mapeamento (`itemIconMap`) quanto o pacote de SVGs (`ProductIconPack`) são carregados
+ * em chunk assíncrono separado após o primeiro paint, mantendo o ícone do corredor como fallback sem CLS.
  *
  * @param props - Propriedades visuais do ícone do item.
  * @returns Ícone vetorial minimalista renderizado.
@@ -396,13 +166,34 @@ export const ItemIcon = memo(function ItemIcon({
   size = 'row',
   inverted = false,
 }: ItemIconProps) {
-  const resolved = resolveItemIcon(name);
-  const iconKey = resolved.kind === 'svg' ? resolved.key : null;
-  const theme = getProductColorTheme(iconKey, categoryId);
+  const [pack, setPack] = useState<ProductIconPackModule | null>(() => cachedIconPack);
+
+  useEffect(() => {
+    if (pack) return;
+    let cancelled = false;
+    void loadProductIconPack().then((loaded) => {
+      if (!cancelled && loaded) {
+        setPack(loaded);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [pack]);
+
+  const FallbackCategoryIcon = CATEGORY_VECTOR_ICONS[categoryId] ?? Package;
+  const fallbackTheme = CATEGORY_ICON_THEME[categoryId] ?? CATEGORY_ICON_THEME.outros;
+
+  const resolved = pack ? pack.resolveItemIcon(name) : null;
+  const iconKey = resolved?.kind === 'svg' ? resolved.key : null;
+  const theme = pack ? pack.getProductColorTheme(iconKey, categoryId) : fallbackTheme;
 
   if (size === 'chip') {
-    if (resolved.kind === 'svg') {
-      const SvgIcon = VECTOR_ICON_COMPONENTS[resolved.key];
+    if (!pack || resolved?.kind === 'svg') {
+      const SvgIcon =
+        pack && resolved?.kind === 'svg'
+          ? pack.VECTOR_ICON_COMPONENTS[resolved.key]
+          : FallbackCategoryIcon;
       return (
         <SvgIcon
           className={`h-4 w-4 shrink-0 ${inverted ? 'text-white' : theme.strokeClass}`}
@@ -420,10 +211,17 @@ export const ItemIcon = memo(function ItemIcon({
         }`}
         aria-hidden="true"
       >
-        {getItemMonogram(name)}
+        {pack.getItemMonogram(name)}
       </span>
     );
   }
+
+  const RowSvgIcon =
+    !pack || resolved?.kind === 'svg'
+      ? pack && resolved?.kind === 'svg'
+        ? pack.VECTOR_ICON_COMPONENTS[resolved.key]
+        : FallbackCategoryIcon
+      : null;
 
   return (
     <span
@@ -434,25 +232,20 @@ export const ItemIcon = memo(function ItemIcon({
       }`}
       aria-hidden="true"
     >
-      {resolved.kind === 'svg' ? (
-        (() => {
-          const SvgIcon = VECTOR_ICON_COMPONENTS[resolved.key];
-          return (
-            <SvgIcon
-              className={`h-5 w-5 transition ${
-                isChecked ? 'text-emerald-600 opacity-75 dark:text-emerald-400' : theme.strokeClass
-              }`}
-              strokeWidth={1.8}
-            />
-          );
-        })()
+      {RowSvgIcon ? (
+        <RowSvgIcon
+          className={`h-5 w-5 transition ${
+            isChecked ? 'text-emerald-600 opacity-75 dark:text-emerald-400' : theme.strokeClass
+          }`}
+          strokeWidth={1.8}
+        />
       ) : (
         <span
           className={`text-xs font-extrabold tracking-tight ${
             isChecked ? 'text-emerald-600 opacity-75 dark:text-emerald-400' : theme.strokeClass
           }`}
         >
-          {getItemMonogram(name)}
+          {pack ? pack.getItemMonogram(name) : ''}
         </span>
       )}
 

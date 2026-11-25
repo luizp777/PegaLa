@@ -18,6 +18,11 @@ import { useTheme } from '../../hooks/useTheme';
 
 vi.mock('../../lib/supabase', () => ({
   isSupabaseConfigured: true,
+  hasImmediateAuthOrJoinIntent: () => false,
+  getSupabaseClient: vi.fn(async () => null),
+  ensureSupabaseSession: vi.fn(async () => null),
+  signInWithGoogle: vi.fn(async () => ({ error: null })),
+  signOutUser: vi.fn(async () => {}),
   supabase: null,
 }));
 

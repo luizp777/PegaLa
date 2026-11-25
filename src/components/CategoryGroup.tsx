@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { CategoryDefinition, ShoppingItem } from '../types';
 import { CategoryIcon } from './ItemIcon';
@@ -35,7 +35,7 @@ interface CategoryGroupProps {
  * @param props - Propriedades do grupo de categoria.
  * @returns Seção renderizada com a lista de itens do corredor.
  */
-export function CategoryGroup({
+export const CategoryGroup = memo(function CategoryGroup({
   category,
   items,
   onToggle,
@@ -58,7 +58,7 @@ export function CategoryGroup({
   };
 
   return (
-    <section className="mb-3 overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900/70">
+    <section className="cv-group mb-3 overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-xs dark:border-zinc-800 dark:bg-zinc-900/70">
       <h2 className="m-0">
         <button
           type="button"
@@ -99,4 +99,4 @@ export function CategoryGroup({
       )}
     </section>
   );
-}
+});

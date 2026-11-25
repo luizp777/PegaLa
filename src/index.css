@@ -39,6 +39,16 @@
   scrollbar-width: none;
 }
 
+.cv-group {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 180px;
+}
+
+.cv-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 58px;
+}
+
 @keyframes pegala-fade-slide-up {
   from {
     opacity: 0;

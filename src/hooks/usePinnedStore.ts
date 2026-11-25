@@ -2,8 +2,17 @@ import { useCallback, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { NearbyStore, PinnedStoreSelection, PreferredProduct } from '../../shared/priceTypes';
 import { getPreferredProductsMap, getPriceComparisonCache } from '../db/localDb';
-import { computePriceComparison } from '../lib/priceEngine';
 import type { ShoppingItem } from '../types';
+
+type ComputePriceComparisonFn = typeof import('../lib/priceEngine').computePriceComparison;
+let cachedComputePriceComparison: ComputePriceComparisonFn | null = null;
+
+async function loadComputePriceComparison(): Promise<ComputePriceComparisonFn> {
+  if (cachedComputePriceComparison) return cachedComputePriceComparison;
+  const mod = await import('../lib/priceEngine');
+  cachedComputePriceComparison = mod.computePriceComparison;
+  return cachedComputePriceComparison;
+}
 
 const PINNED_STORE_PREFIX = 'pegala_pinned_store_';
 
@@ -121,7 +130,9 @@ export function usePinnedStore(params: {
       getPriceComparisonCache(listId),
       getPreferredProductsMap(),
     ]);
-    return { cache: cache ?? null, prefs };
+    const computeFn =
+      cache && cache.candidates.length > 0 ? await loadComputePriceComparison() : null;
+    return { cache: cache ?? null, prefs, computeFn };
   }, [listId, pinnedStore?.id]);
 
   const pinStore = useCallback(
@@ -152,8 +163,9 @@ export function usePinnedStore(params: {
 
     const cache = liveData?.cache;
     const prefs: Map<string, PreferredProduct> | undefined = liveData?.prefs;
+    const computeFn = liveData?.computeFn;
 
-    if (!cache || cache.candidates.length === 0) {
+    if (!cache || cache.candidates.length === 0 || !computeFn) {
       return {
         estimatedTotalCents: pinnedStore.fallbackTotalCents,
         inCartTotalCents: 0,
@@ -179,7 +191,7 @@ export function usePinnedStore(params: {
       ? cache.stores
       : [...cache.stores, storeObj];
 
-    const comparison = computePriceComparison({
+    const comparison = computeFn({
       stores: storesForComparison,
       items: allItems,
       candidates: cache.candidates,

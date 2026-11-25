@@ -202,6 +202,7 @@ async function fetchNominatimFallback(
   const dLng = 0.08;
   const viewbox = `${(lng - dLng).toFixed(4)},${(lat + dLat).toFixed(4)},${(lng + dLng).toFixed(4)},${(lat - dLat).toFixed(4)}`;
 
+  // Sequencial para respeitar a política pública do Nominatim (máx. 1 req/s)
   for (const storeType of types) {
     const q = storeType === 'farmacia' ? 'farmacia' : 'supermercado';
     try {

@@ -26,6 +26,7 @@ export default defineConfig({
         'src/main.tsx',
         'src/components/icons/**',
         'src/components/CustomProductIcons.tsx',
+        'src/components/ProductIconPack.tsx',
         'src/lib/catalogPtBr.ts',
         'src/**/__tests__/**',
       ],
@@ -82,6 +83,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
+      includeManifestIcons: false,
       includeAssets: [
         'favicon.svg',
         'theme-init.js',
@@ -89,8 +91,6 @@ export default defineConfig({
         'icons/icon-512.svg',
         'icons/maskable-icon.svg',
         'icons/icon-192.png',
-        'icons/icon-512.png',
-        'icons/maskable-icon-512.png',
         'icons/apple-touch-icon.png',
       ],
       manifest: {
@@ -162,7 +162,27 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        globIgnores: [
+          '**/vendor-supabase-*.js',
+          '**/PriceComparisonSheet-*.js',
+          '**/ShareModal-*.js',
+          '**/icons/icon-512.png',
+          '**/icons/maskable-icon-512.png',
+        ],
         navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            urlPattern: /\/assets\/(?:vendor-supabase|PriceComparisonSheet|ShareModal)-.*\.js$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pegala-lazy-chunks',
+              expiration: {
+                maxEntries: 16,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+            },
+          },
+        ],
       },
     }),
   ],

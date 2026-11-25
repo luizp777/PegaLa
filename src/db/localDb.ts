@@ -8,7 +8,7 @@ import type {
   UserDictionaryEntry,
 } from '../types';
 import type { CachedPriceComparison, PreferredProduct } from '../../shared/priceTypes';
-import { guessCategory, normalizeText } from '../lib/dictionaryPtBr';
+import { normalizeText } from '../lib/categories';
 import { parseMultiLineInput } from '../lib/itemParser';
 import { dbLogger, serializeError } from '../lib/logger';
 
@@ -244,6 +244,61 @@ export async function enqueueSync(
 }
 
 /**
+ * Enfileira múltiplas mutações de uma mesma lista em uma única passagem sobre `pendingSync`
+ * (eliminando queries N+1 / O(N²) em operações em lote como colar, limpar, duplicar e recomeçar).
+ *
+ * @param listId - UUID da lista associada às mutações.
+ * @param entries - Lista de mutações a coalescer e inserir em lote.
+ */
+async function enqueueSyncBatch(
+  listId: string,
+  entries: Array<{
+    action: PendingSyncMutation['action'];
+    entityId: string;
+    payload: Record<string, unknown>;
+  }>
+): Promise<void> {
+  if (entries.length === 0) return;
+
+  const upsertKeys = new Set<string>();
+  const deleteEntityIds = new Set<string>();
+  for (const e of entries) {
+    if (e.action === 'upsert_item' || e.action === 'upsert_list') {
+      upsertKeys.add(`${e.action}:${e.entityId}`);
+    } else if (e.action === 'delete_item') {
+      deleteEntityIds.add(e.entityId);
+    }
+  }
+
+  if (upsertKeys.size > 0 || deleteEntityIds.size > 0) {
+    const existing = await db.pendingSync.where('listId').equals(listId).toArray();
+    const idsToDelete: number[] = [];
+    for (const m of existing) {
+      if (m.id === undefined) continue;
+      if (upsertKeys.has(`${m.action}:${m.entityId}`)) {
+        idsToDelete.push(m.id);
+      } else if (m.action === 'upsert_item' && deleteEntityIds.has(m.entityId)) {
+        idsToDelete.push(m.id);
+      }
+    }
+    if (idsToDelete.length > 0) {
+      await db.pendingSync.bulkDelete(idsToDelete);
+    }
+  }
+
+  const now = new Date().toISOString();
+  await db.pendingSync.bulkAdd(
+    entries.map((e) => ({
+      action: e.action,
+      entityId: e.entityId,
+      listId,
+      payload: e.payload,
+      createdAt: now,
+    }))
+  );
+}
+
+/**
  * Cria uma nova lista de compras local, define-a como ativa e enfileira sua sincronização.
  *
  * @param name - Nome visível da lista.
@@ -387,11 +442,20 @@ export async function addItemsFromText(listId: string, rawText: string): Promise
   const parsedItems = parseMultiLineInput(rawText);
   if (parsedItems.length === 0) return [];
 
-  const userDict = await getUserDictionaryMap();
+  const [userDict, { guessCategory }] = await Promise.all([
+    getUserDictionaryMap(),
+    import('../lib/dictionaryPtBr'),
+  ]);
   const now = new Date().toISOString();
   const addedOrUpdated: ShoppingItem[] = [];
 
   await db.transaction('rw', db.items, db.pendingSync, db.dictionary, async () => {
+    const syncEntries: Array<{
+      action: PendingSyncMutation['action'];
+      entityId: string;
+      payload: Record<string, unknown>;
+    }> = [];
+
     for (const parsed of parsedItems) {
       const existing = await db.items
         .where('[listId+normalizedName]')
@@ -415,7 +479,11 @@ export async function addItemsFromText(listId: string, rawText: string): Promise
           updatedAt: now,
         };
         await db.items.put(updated);
-        await enqueueSync('upsert_item', updated.id, listId, updated as unknown as Record<string, unknown>);
+        syncEntries.push({
+          action: 'upsert_item',
+          entityId: updated.id,
+          payload: updated as unknown as Record<string, unknown>,
+        });
         await recordDictionaryUsage(updated.name, updated.categoryId);
         addedOrUpdated.push(updated);
       } else {
@@ -434,11 +502,17 @@ export async function addItemsFromText(listId: string, rawText: string): Promise
           updatedAt: now,
         };
         await db.items.put(item);
-        await enqueueSync('upsert_item', item.id, listId, item as unknown as Record<string, unknown>);
+        syncEntries.push({
+          action: 'upsert_item',
+          entityId: item.id,
+          payload: item as unknown as Record<string, unknown>,
+        });
         await recordDictionaryUsage(item.name, categoryId);
         addedOrUpdated.push(item);
       }
     }
+
+    await enqueueSyncBatch(listId, syncEntries);
   });
 
   return addedOrUpdated;
@@ -708,6 +782,185 @@ export async function deleteItem(item: ShoppingItem): Promise<void> {
 }
 
 /**
+ * Remove em lote todos os itens marcados ("No carrinho / Já tenho") de uma lista,
+ * retornando os itens removidos para permitir restauração via "Desfazer".
+ *
+ * @param listId - UUID da lista.
+ * @returns Itens que foram excluídos.
+ */
+export async function deleteCheckedItems(listId: string): Promise<ShoppingItem[]> {
+  return db.transaction('rw', db.items, db.pendingSync, async () => {
+    const checked = await db.items
+      .where('listId')
+      .equals(listId)
+      .filter((i) => i.isChecked)
+      .toArray();
+
+    if (checked.length === 0) return [];
+
+    await db.items.bulkDelete(checked.map((i) => i.id));
+    await enqueueSyncBatch(
+      listId,
+      checked.map((item) => ({
+        action: 'delete_item',
+        entityId: item.id,
+        payload: { id: item.id, listId },
+      }))
+    );
+    return checked;
+  });
+}
+
+/**
+ * Restaura em lote uma coleção de itens recém-excluídos (usado pelo "Desfazer" ao limpar marcados).
+ *
+ * @param items - Itens a serem restaurados no IndexedDB e reenfileirados para sincronização.
+ */
+export async function restoreDeletedItems(items: ShoppingItem[]): Promise<void> {
+  if (items.length === 0) return;
+  const now = new Date().toISOString();
+  await db.transaction('rw', db.items, db.pendingSync, async () => {
+    const toRestore: ShoppingItem[] = [];
+    for (const item of items) {
+      const existingByName = await db.items
+        .where('[listId+normalizedName]')
+        .equals([item.listId, item.normalizedName])
+        .first();
+      if (existingByName && existingByName.id !== item.id) {
+        continue;
+      }
+      toRestore.push({ ...item, updatedAt: now });
+    }
+    if (toRestore.length === 0) return;
+    await db.items.bulkPut(toRestore);
+    const byList = new Map<string, ShoppingItem[]>();
+    for (const item of toRestore) {
+      const arr = byList.get(item.listId) ?? [];
+      arr.push(item);
+      byList.set(item.listId, arr);
+    }
+    for (const [listId, group] of byList.entries()) {
+      await enqueueSyncBatch(
+        listId,
+        group.map((item) => ({
+          action: 'upsert_item',
+          entityId: item.id,
+          payload: item as unknown as Record<string, unknown>,
+        }))
+      );
+    }
+  });
+}
+
+/**
+ * Duplica uma lista existente como nova lista local privada, clonando todos os itens
+ * já reiniciados como pendentes (prontos para uma nova compra).
+ *
+ * @param listId - UUID da lista de origem.
+ * @returns Nova lista criada ou `null` caso a origem não exista.
+ */
+export async function duplicateList(listId: string): Promise<ShoppingList | null> {
+  return db.transaction('rw', db.lists, db.items, db.pendingSync, async () => {
+    const source = await db.lists.get(listId);
+    if (!source) return null;
+
+    const sourceItems = await db.items.where('listId').equals(listId).toArray();
+    const now = new Date().toISOString();
+    const baseName = source.name.replace(/\s*\(cópia\)$/i, '').trim() || source.name;
+    const copyName = `${baseName} (cópia)`.slice(0, 80);
+
+    const clonedList: ShoppingList = {
+      id: crypto.randomUUID(),
+      name: copyName,
+      type: source.type,
+      shareCode: generateShareCode(),
+      ownerId: null,
+      isSynced: false,
+      isShared: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await db.lists.add(clonedList);
+    await enqueueSync('upsert_list', clonedList.id, clonedList.id, clonedList as unknown as Record<string, unknown>);
+
+    if (sourceItems.length > 0) {
+      const clonedItems: ShoppingItem[] = sourceItems.map((item) => ({
+        ...item,
+        id: crypto.randomUUID(),
+        listId: clonedList.id,
+        isChecked: false,
+        checkedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      await db.items.bulkAdd(clonedItems);
+      await enqueueSyncBatch(
+        clonedList.id,
+        clonedItems.map((item) => ({
+          action: 'upsert_item',
+          entityId: item.id,
+          payload: item as unknown as Record<string, unknown>,
+        }))
+      );
+    }
+
+    return clonedList;
+  });
+}
+
+/**
+ * Contadores de registros armazenados localmente no IndexedDB.
+ */
+export interface LocalDataStats {
+  /** Quantidade de listas locais. */
+  lists: number;
+  /** Quantidade total de itens em todas as listas. */
+  items: number;
+  /** Quantidade de termos aprendidos no dicionário pessoal. */
+  dictionary: number;
+  /** Quantidade de snapshots de comparação de preços em cache. */
+  priceCaches: number;
+}
+
+/**
+ * Retorna os contadores atuais do banco local IndexedDB para exibição na tela de Dados e Backup.
+ *
+ * @returns Contadores das tabelas locais.
+ */
+export async function getLocalDataStats(): Promise<LocalDataStats> {
+  const [lists, items, dictionary, priceCaches] = await Promise.all([
+    db.lists.count(),
+    db.items.count(),
+    db.dictionary.count(),
+    db.priceComparisons.count(),
+  ]);
+  return { lists, items, dictionary, priceCaches };
+}
+
+/**
+ * Limpa todo o cache offline de comparações de preços no IndexedDB.
+ *
+ * @returns Quantidade de snapshots removidos.
+ */
+export async function clearPriceComparisonCaches(): Promise<number> {
+  const count = await db.priceComparisons.count();
+  await db.priceComparisons.clear();
+  return count;
+}
+
+/**
+ * Limpa o dicionário pessoal de sugestões frequentes e aprendizados de corredor.
+ *
+ * @returns Quantidade de entradas removidas.
+ */
+export async function clearUserDictionary(): Promise<number> {
+  const count = await db.dictionary.count();
+  await db.dictionary.clear();
+  return count;
+}
+
+/**
  * Reativa todos os itens marcados ("No carrinho / Já tenho") de volta para a lista de compra ativa
  * sem excluir nenhum item salvo na lista.
  *
@@ -725,17 +978,22 @@ export async function uncheckAllItems(listId: string): Promise<number> {
     if (checked.length === 0) return 0;
 
     const now = new Date().toISOString();
-    for (const item of checked) {
-      const updated: ShoppingItem = {
-        ...item,
-        isChecked: false,
-        checkedAt: null,
-        updatedAt: now,
-      };
-      await db.items.put(updated);
-      await enqueueSync('upsert_item', updated.id, listId, updated as unknown as Record<string, unknown>);
-    }
-    return checked.length;
+    const updatedItems: ShoppingItem[] = checked.map((item) => ({
+      ...item,
+      isChecked: false,
+      checkedAt: null,
+      updatedAt: now,
+    }));
+    await db.items.bulkPut(updatedItems);
+    await enqueueSyncBatch(
+      listId,
+      updatedItems.map((updated) => ({
+        action: 'upsert_item',
+        entityId: updated.id,
+        payload: updated as unknown as Record<string, unknown>,
+      }))
+    );
+    return updatedItems.length;
   });
 }
 
@@ -749,18 +1007,27 @@ export async function recheckItems(listId: string, itemIds: string[]): Promise<v
   if (itemIds.length === 0) return;
   await db.transaction('rw', db.items, db.pendingSync, async () => {
     const now = new Date().toISOString();
-    for (const id of itemIds) {
-      const item = await db.items.get(id);
+    const existing = await db.items.bulkGet(itemIds);
+    const updatedItems: ShoppingItem[] = [];
+    for (const item of existing) {
       if (!item || item.listId !== listId || item.isChecked) continue;
-      const updated: ShoppingItem = {
+      updatedItems.push({
         ...item,
         isChecked: true,
         checkedAt: now,
         updatedAt: now,
-      };
-      await db.items.put(updated);
-      await enqueueSync('upsert_item', updated.id, listId, updated as unknown as Record<string, unknown>);
+      });
     }
+    if (updatedItems.length === 0) return;
+    await db.items.bulkPut(updatedItems);
+    await enqueueSyncBatch(
+      listId,
+      updatedItems.map((updated) => ({
+        action: 'upsert_item',
+        entityId: updated.id,
+        payload: updated as unknown as Record<string, unknown>,
+      }))
+    );
   });
 }
 

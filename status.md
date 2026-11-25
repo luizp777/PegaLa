@@ -2,6 +2,23 @@
 
 ---
 
+## Ciclo 12 — Otimização Extrema de Performance, Backup Local & Qualidade de Vida
+
+> **Status**: Concluído (4 rodadas de performance + Backup/UX + Code Reviews + Validação completa)
+> **Data de conclusão**: 2026-11-25
+
+### Performance de Boot, Bundle & PWA (4 Rodadas)
+- [x] **C12-01. Lazy-load do SDK Supabase (`~59 KB` gzip fora do boot)** (`src/lib/supabase.ts`, `src/hooks/useAuthSession.ts`, `src/db/syncEngine.ts`, `src/components/ShareModal.tsx`, `src/hooks/usePriceComparison.ts`, `src/App.tsx`): `getSupabaseClient()` com `import('@supabase/supabase-js')` dinâmico, carregamento imediato apenas quando há `?join=` / callback OAuth (`hasImmediateAuthOrJoinIntent`) e adiado pós-paint (`requestIdleCallback` / `setTimeout`) no uso normal.
+- [x] **C12-02. Code-splitting de Ícones, Dicionário, Motor de Preços & Sync** (`src/components/ProductIconPack.tsx`, `src/components/ItemIcon.tsx`, `src/components/QuickAddBar.tsx`, `src/hooks/useActiveList.ts`, `src/hooks/usePinnedStore.ts`, `src/App.tsx`): extração de `itemIconMap.ts` + SVGs customizados para `ProductIconPack` (`12.92 KB` gzip async com fallback do corredor `CLS = 0`), desacoplamento de `dictionaryPtBr.ts` via `categories.ts` (pré-carregado ao focar no input), e lazy-load de `syncEngine`, `diagnostics`, `priceEngine`, `PinnedStoreBar`, `ShoppingCompleteCard` e `PwaUpdatePrompt` (`workbox-window`). Redução do **Initial JS total** de `227.92 KB` para **`143.64 KB` gzip (`-37.0%`)** e do `index.js` de `54.10 KB` para **`30.47 KB` gzip (`-43.7%`)**.
+- [x] **C12-03. Boot sem waterfall, Fluidez 60fps & Batching IndexedDB** (`src/hooks/useActiveList.ts`, `src/components/ShoppingItemRow.tsx`, `src/components/CategoryGroup.tsx`, `src/components/CheckedSection.tsx`, `src/components/Header.tsx`, `src/components/ActiveListToolbar.tsx`, `src/db/localDb.ts`, `src/index.css`): hidratação imediata de `activeListId` via `getLastActiveListId()`, swipe horizontal 60fps via refs DOM diretas (zero re-renders por frame e proteção contra reset em re-renders externos), `memo(...)` + callbacks estáveis, `Intl.Collator('pt-BR')` reutilizado, `useDeferredValue` no autocomplete, `.cv-group`/`.cv-row` com `content-visibility: auto`, e `enqueueSyncBatch` + `bulkPut`/`bulkGet` eliminando N+1/`O(N²)` em operações em lote.
+- [x] **C12-04. API de Preços, Stream NDJSON, Workbox & Cache HTTP** (`api/prices/quotes.ts`, `api/prices/nearby-stores.ts`, `src/hooks/usePriceComparison.ts`, `vite.config.ts`, `vercel.json`, `scripts/check-bundle-budget.mjs`): consultas de cache Supabase em paralelo (`Promise.all`), fila round-robin entre redes e flush não-bloqueante em `quotes.ts`; batching/throttle de 120ms no stream NDJSON do cliente; precache enxuto do PWA (`746.75 KiB`, excluindo chunks online pesados e PNGs 512px com `includeManifestIcons: false` + `runtimeCaching` `CacheFirst`); headers `Cache-Control: immutable` em `vercel.json`; e budget estrito (`entryJs: 34 KB`, `initialTotalJs: 152 KB`) com verificação anti-vazamento em `dist/index.html`.
+
+### Qualidade de Vida & Dados Locais
+- [x] **C12-05. Backup JSON Offline & Limpeza Seletiva** (`src/lib/localBackup.ts`, `src/components/DataBackupModal.tsx`, `src/db/localDb.ts`, `src/components/ListSwitcherMenu.tsx`, `src/components/Header.tsx`): modal lazy-loaded (`4.75 KB` gzip) com contadores do IndexedDB, exportação JSON versionada (com revogação segura de Blob URL para iOS), importação validada nos modos **Mesclar** ou **Substituir tudo** (preservando `preferredProduct` e limpando chaves órfãs do `localStorage`), e limpeza seletiva de cache de preços ou histórico de sugestões.
+- [x] **C12-06. Limpar marcados com Desfazer, Duplicar Lista & Copiar por Corredores** (`src/components/CheckedSection.tsx`, `src/components/GlobalToastBar.tsx`, `src/lib/listTextExport.ts`, `src/components/ShareModal.tsx`, `src/components/ActiveListToolbar.tsx`, `src/lib/__tests__/localBackupAndExport.test.ts`): exclusão em lote de itens marcados com toast **Desfazer** (protegido contra duplicidade por `normalizedName`), clonagem de lista pronta para nova compra (`duplicateList`), formatação de pendentes por corredor para WhatsApp (`0.35 KB` gzip lazy) e **111 testes em 22 arquivos** passando.
+
+---
+
 ## Ciclo 11 — Code Review & Design (UI/UX) Review Geral + Hardening + Refatoração
 
 > **Status**: Concluído (Sprints 1–3, Migrations Supabase & Fixes de Produção concluídos)

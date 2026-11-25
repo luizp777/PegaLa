@@ -10,6 +10,8 @@ export interface ToastState {
   message: string;
   /** Item recém-excluído que pode ser restaurado pelo botão "Desfazer". */
   undoItem?: ShoppingItem;
+  /** Itens recém-excluídos em lote que podem ser restaurados pelo botão "Desfazer". */
+  undoDeletedItems?: ShoppingItem[];
   /** IDs recém-desmarcados ao recomeçar a lista (permite "Desfazer"). */
   undoRestart?: { listId: string; itemIds: string[] };
   /** Item recém-marcado elegível para captura rápida de preço na loja ativa. */
@@ -74,7 +76,7 @@ export function GlobalToastBar({
         >
           <div className="pointer-events-auto flex items-center gap-3 rounded-2xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-xl dark:bg-zinc-800 dark:ring-1 dark:ring-zinc-700">
             <span>{toast.message}</span>
-            {toast.undoItem && (
+            {(toast.undoItem || (toast.undoDeletedItems && toast.undoDeletedItems.length > 0)) && (
               <button
                 type="button"
                 onClick={onUndoDelete}

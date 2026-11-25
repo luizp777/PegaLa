@@ -1,5 +1,5 @@
 import type { ParsedItemInput } from '../types';
-import { normalizeText } from './dictionaryPtBr';
+import { normalizeText } from './categories';
 
 const UNIT_ALIASES: Record<string, string> = {
   un: 'un',

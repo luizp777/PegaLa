@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Minus, Plus, Trash2, X } from 'lucide-react';
 import type { CategoryId, ShoppingItem } from '../types';
-import { CATEGORIES } from '../lib/dictionaryPtBr';
+import { CATEGORIES } from '../lib/categories';
 import { getMinQuantityForUnit, getQuantityStep } from '../db/localDb';
 import { formatQuantity } from '../lib/itemParser';
 import { hapticLight, hapticSuccess, hapticWarning } from '../lib/haptics';

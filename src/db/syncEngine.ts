@@ -1,6 +1,11 @@
-import type { PostgrestError, RealtimeChannel } from '@supabase/supabase-js';
+import type { PostgrestError, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { db, generateShareCode } from './localDb';
-import { ensureSupabaseSession, isSupabaseConfigured, supabase } from '../lib/supabase';
+import {
+  ensureSupabaseSession,
+  getSupabaseClient,
+  hasImmediateAuthOrJoinIntent,
+  isSupabaseConfigured,
+} from '../lib/supabase';
 import { serializeError, syncLogger } from '../lib/logger';
 import type { CategoryId, ListType, PendingSyncMutation, ShoppingItem, ShoppingList } from '../types';
 
@@ -179,12 +184,13 @@ async function upsertListWithCodeRetry(
   list: ShoppingList,
   userId: string
 ): Promise<PostgrestError | null> {
-  if (!supabase) return null;
+  const client = await getSupabaseClient();
+  if (!client) return null;
   let candidate = list;
   let lastError: PostgrestError | null = null;
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    const { error } = await supabase
+    const { error } = await client
       .from('lists')
       .upsert(toRemoteList(candidate, userId), { onConflict: 'id' });
 
@@ -213,6 +219,7 @@ async function upsertListWithCodeRetry(
 }
 
 let activeChannel: RealtimeChannel | null = null;
+let activeRealtimeClient: SupabaseClient | null = null;
 let flushing = false;
 let pendingFlushRequested = false;
 const authRetryCounts = new Map<string, number>();
@@ -226,10 +233,11 @@ const SYNC_BATCH_SIZE = 100;
  * @returns Primeiro erro PostgREST encontrado ou `null` em caso de sucesso.
  */
 async function upsertItemsInChunks(items: ShoppingItem[]): Promise<PostgrestError | null> {
-  if (!supabase || items.length === 0) return null;
+  const client = await getSupabaseClient();
+  if (!client || items.length === 0) return null;
   for (let i = 0; i < items.length; i += SYNC_BATCH_SIZE) {
     const chunk = items.slice(i, i + SYNC_BATCH_SIZE);
-    const { error } = await supabase
+    const { error } = await client
       .from('list_items')
       .upsert(chunk.map(toRemoteItem), { onConflict: 'list_id,normalized_name' });
     if (error) return error;
@@ -258,7 +266,7 @@ async function withCrossTabSyncLock<T>(fn: () => Promise<T>): Promise<T> {
  * @returns `true` se todas as mutações pendentes foram sincronizadas com sucesso.
  */
 export async function flushPendingSync(): Promise<boolean> {
-  if (!isSupabaseConfigured || !supabase || !navigator.onLine) {
+  if (!isSupabaseConfigured || !navigator.onLine) {
     return false;
   }
   if (flushing) {
@@ -275,7 +283,11 @@ export async function flushPendingSync(): Promise<boolean> {
  * @returns `true` se todas as mutações pendentes foram sincronizadas com sucesso.
  */
 async function runFlushPendingSync(): Promise<boolean> {
-  if (!isSupabaseConfigured || !supabase || !navigator.onLine) {
+  if (!isSupabaseConfigured || !navigator.onLine) {
+    return false;
+  }
+  const client = await getSupabaseClient();
+  if (!client) {
     return false;
   }
   if (flushing) {
@@ -393,7 +405,7 @@ async function runFlushPendingSync(): Promise<boolean> {
           });
           await deleteMutAndSuperseded();
         } else {
-          void supabase?.auth.refreshSession().catch(() => { });
+          void client.auth.refreshSession().catch(() => { });
           syncLogger.warn('Erro transitório ao sincronizar mutação (mantida na fila)', {
             action: mut.action,
             entityId: mut.entityId,
@@ -463,13 +475,13 @@ async function runFlushPendingSync(): Promise<boolean> {
         if (failedListIds.has(listId)) break;
         const chunk = muts.slice(i, i + SYNC_BATCH_SIZE);
         const ids = chunk.map((m) => m.entityId);
-        const { error } = await supabase.from('list_items').delete().in('id', ids);
+        const { error } = await client.from('list_items').delete().in('id', ids);
 
         if (!error) {
           await deleteCompletedMutations(chunk);
         } else if (isPermanentError(error) && chunk.length > 1) {
           for (const single of chunk) {
-            const singleRes = await supabase.from('list_items').delete().eq('id', single.entityId);
+            const singleRes = await client.from('list_items').delete().eq('id', single.entityId);
             if (!singleRes.error) {
               await deleteCompletedMutations([single]);
             } else {
@@ -503,7 +515,7 @@ async function runFlushPendingSync(): Promise<boolean> {
         if (failedListIds.has(listId)) break;
         const chunk = dedupedMuts.slice(i, i + SYNC_BATCH_SIZE);
         const rows = chunk.map((m) => toRemoteItem(m.payload as unknown as ShoppingItem));
-        const { error } = await supabase
+        const { error } = await client
           .from('list_items')
           .upsert(rows, { onConflict: 'list_id,normalized_name' });
 
@@ -517,7 +529,7 @@ async function runFlushPendingSync(): Promise<boolean> {
           // Fallback to single-item upserts to isolate only the permanently invalid item
           for (const single of chunk) {
             const singleItem = single.payload as unknown as ShoppingItem;
-            const singleRes = await supabase
+            const singleRes = await client
               .from('list_items')
               .upsert(toRemoteItem(singleItem), { onConflict: 'list_id,normalized_name' });
             if (!singleRes.error) {
@@ -545,10 +557,10 @@ async function runFlushPendingSync(): Promise<boolean> {
 
       let error: PostgrestError | null = null;
       if (mut.action === 'delete_list') {
-        const res = await supabase.from('lists').delete().eq('id', mut.entityId);
+        const res = await client.from('lists').delete().eq('id', mut.entityId);
         error = res.error;
       } else {
-        const res = await supabase
+        const res = await client
           .from('list_members')
           .delete()
           .eq('list_id', mut.listId)
@@ -596,7 +608,8 @@ export async function joinSharedListByCode(rawCode: string): Promise<{
     return { list: localMatch, error: null };
   }
 
-  if (!isSupabaseConfigured || !supabase) {
+  const client = await getSupabaseClient();
+  if (!isSupabaseConfigured || !client) {
     return {
       list: null,
       error: 'Sincronização na nuvem (Supabase) não configurada. Adicione as chaves no .env para entrar em listas remotas.',
@@ -611,7 +624,7 @@ export async function joinSharedListByCode(rawCode: string): Promise<{
 
     // Prefer secure RPC (registers membership + fetches list without exposing table listing)
     let listRow: RemoteListRow | null = null;
-    const { data: rpcRows, error: rpcError } = await supabase
+    const { data: rpcRows, error: rpcError } = await client
       .rpc('join_list_by_share_code', { p_share_code: code })
       .returns<RemoteListRow[]>();
 
@@ -629,7 +642,7 @@ export async function joinSharedListByCode(rawCode: string): Promise<{
         error: serializeError(rpcError),
       });
       // Fallback for legacy databases where the RPC was not yet deployed
-      const { data: directRow } = await supabase
+      const { data: directRow } = await client
         .from('lists')
         .select('*')
         .eq('share_code', code)
@@ -644,7 +657,7 @@ export async function joinSharedListByCode(rawCode: string): Promise<{
     const list = fromRemoteList(listRow, true);
     await db.lists.put(list);
 
-    const { data: itemRows, error: itemsError } = await supabase
+    const { data: itemRows, error: itemsError } = await client
       .from('list_items')
       .select('*')
       .eq('list_id', list.id)
@@ -687,7 +700,9 @@ export async function joinSharedListByCode(rawCode: string): Promise<{
  * @param listId - UUID da lista a ser reconciliada.
  */
 export async function pullListFromCloud(listId: string): Promise<void> {
-  if (!isSupabaseConfigured || !supabase || !navigator.onLine) return;
+  if (!isSupabaseConfigured || !navigator.onLine) return;
+  const client = await getSupabaseClient();
+  if (!client) return;
 
   try {
     const user = await ensureSupabaseSession();
@@ -696,7 +711,7 @@ export async function pullListFromCloud(listId: string): Promise<void> {
     const localList = await db.lists.get(listId);
     if (!localList?.isSynced) return;
 
-    const { data: remoteListRow, error: remoteListError } = await supabase
+    const { data: remoteListRow, error: remoteListError } = await client
       .from('lists')
       .select('*')
       .eq('id', listId)
@@ -735,7 +750,7 @@ export async function pullListFromCloud(listId: string): Promise<void> {
       await db.lists.update(listId, { isShared: true });
     }
 
-    const { data: itemRows, error } = await supabase
+    const { data: itemRows, error } = await client
       .from('list_items')
       .select('*')
       .eq('list_id', listId)
@@ -810,13 +825,14 @@ export async function pullListFromCloud(listId: string): Promise<void> {
  * @returns `true` se a lista e todos os seus itens foram enviados sem erro.
  */
 export async function syncListNow(listId: string): Promise<boolean> {
-  if (!isSupabaseConfigured || !supabase || !navigator.onLine) return false;
+  if (!isSupabaseConfigured || !navigator.onLine) return false;
   if (flushing) {
     pendingFlushRequested = true;
     return false;
   }
 
-  const client = supabase;
+  const client = await getSupabaseClient();
+  if (!client) return false;
   return withCrossTabSyncLock(async () => {
     if (flushing) {
       pendingFlushRequested = true;
@@ -924,12 +940,12 @@ export async function syncListNow(listId: string): Promise<boolean> {
  * @returns Função de limpeza que remove a inscrição do canal Realtime.
  */
 export function subscribeToListRealtime(listId: string): () => void {
-  if (activeChannel && supabase) {
-    supabase.removeChannel(activeChannel);
+  if (activeChannel && activeRealtimeClient) {
+    void activeRealtimeClient.removeChannel(activeChannel);
     activeChannel = null;
   }
 
-  if (!isSupabaseConfigured || !supabase) {
+  if (!isSupabaseConfigured) {
     return () => { };
   }
 
@@ -937,6 +953,11 @@ export function subscribeToListRealtime(listId: string): () => void {
   let realtimeConnected = false;
   let pullDebounceTimer: number | null = null;
   let myChannel: typeof activeChannel = null;
+  let myClient: SupabaseClient | null = null;
+  let authSubscription: { unsubscribe: () => void } | null = null;
+  let fallbackTimer: number | null = null;
+  let idleHandle: number | null = null;
+  let bootDelayTimer: ReturnType<typeof setTimeout> | null = null;
 
   const schedulePull = () => {
     if (cancelled) return;
@@ -952,15 +973,15 @@ export function subscribeToListRealtime(listId: string): () => void {
   };
 
   const reconcileNow = async () => {
-    if (cancelled || !supabase || !navigator.onLine) return;
+    if (cancelled || !myClient || !navigator.onLine) return;
     try {
       const user = await ensureSupabaseSession();
-      if (!user || cancelled || !supabase) return;
+      if (!user || cancelled || !myClient) return;
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await myClient.auth.getSession();
       if (session?.access_token) {
-        await supabase.realtime.setAuth(session.access_token);
+        await myClient.realtime.setAuth(session.access_token);
       }
       await flushPendingSync();
       await pullListFromCloud(listId);
@@ -978,55 +999,62 @@ export function subscribeToListRealtime(listId: string): () => void {
     }
   };
 
-  document.addEventListener('visibilitychange', handleVisibilityOrOnline);
-  window.addEventListener('online', handleVisibilityOrOnline);
+  const startRealtime = () => {
+    if (cancelled) return;
+    document.addEventListener('visibilitychange', handleVisibilityOrOnline);
+    window.addEventListener('online', handleVisibilityOrOnline);
 
-  const {
-    data: { subscription: authSubscription },
-  } = supabase.auth.onAuthStateChange((event, session) => {
-    if (
-      !cancelled &&
-      supabase &&
-      session?.access_token &&
-      (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')
-    ) {
-      void supabase.realtime.setAuth(session.access_token);
-    }
-  });
-
-  // Fallback polling only when Realtime WebSocket is not actively subscribed (e.g. Firefox/mobile drops)
-  const fallbackTimer = window.setInterval(() => {
-    if (!cancelled && !realtimeConnected && document.visibilityState === 'visible' && navigator.onLine) {
-      void reconcileNow();
-    }
-  }, 5000);
-
-  void (async () => {
-    try {
-      const user = await ensureSupabaseSession();
-      if (!user || cancelled || !supabase) return;
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        await supabase.realtime.setAuth(session.access_token);
+    // Fallback polling only when Realtime WebSocket is not actively subscribed (e.g. Firefox/mobile drops)
+    fallbackTimer = window.setInterval(() => {
+      if (!cancelled && !realtimeConnected && document.visibilityState === 'visible' && navigator.onLine) {
+        void reconcileNow();
       }
+    }, 5000);
 
-      if (cancelled) return;
+    void (async () => {
+      try {
+        const client = await getSupabaseClient();
+        if (!client || cancelled) return;
+        myClient = client;
+        activeRealtimeClient = client;
 
-      // Push pending mutations and pull latest state before opening the live channel
-      await flushPendingSync();
-      await pullListFromCloud(listId);
+        const {
+          data: { subscription },
+        } = client.auth.onAuthStateChange((event, session) => {
+          if (
+            !cancelled &&
+            session?.access_token &&
+            (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')
+          ) {
+            void client.realtime.setAuth(session.access_token);
+          }
+        });
+        authSubscription = subscription;
 
-      if (cancelled || !supabase) return;
+        const user = await ensureSupabaseSession();
+        if (!user || cancelled) return;
 
-      if (activeChannel) {
-        supabase.removeChannel(activeChannel);
-        activeChannel = null;
-      }
+        const {
+          data: { session },
+        } = await client.auth.getSession();
+        if (session?.access_token) {
+          await client.realtime.setAuth(session.access_token);
+        }
 
-      myChannel = supabase
+        if (cancelled) return;
+
+        // Push pending mutations and pull latest state before opening the live channel
+        await flushPendingSync();
+        await pullListFromCloud(listId);
+
+        if (cancelled) return;
+
+        if (activeChannel) {
+          void client.removeChannel(activeChannel);
+          activeChannel = null;
+        }
+
+        myChannel = client
         .channel(`list-sync-${listId}`)
         .on(
           'postgres_changes',
@@ -1156,19 +1184,36 @@ export function subscribeToListRealtime(listId: string): () => void {
       });
     }
   })();
+  };
+
+  if (hasImmediateAuthOrJoinIntent() || import.meta.env.MODE === 'test') {
+    startRealtime();
+  } else if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    idleHandle = window.requestIdleCallback(startRealtime, { timeout: 600 });
+  } else {
+    bootDelayTimer = setTimeout(startRealtime, 150);
+  }
 
   return () => {
     cancelled = true;
+    if (idleHandle !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+      window.cancelIdleCallback(idleHandle);
+    }
+    if (bootDelayTimer !== null) {
+      clearTimeout(bootDelayTimer);
+    }
     if (pullDebounceTimer !== null) {
       window.clearTimeout(pullDebounceTimer);
       pullDebounceTimer = null;
     }
-    window.clearInterval(fallbackTimer);
+    if (fallbackTimer !== null) {
+      window.clearInterval(fallbackTimer);
+    }
     document.removeEventListener('visibilitychange', handleVisibilityOrOnline);
     window.removeEventListener('online', handleVisibilityOrOnline);
-    authSubscription.unsubscribe();
-    if (myChannel && supabase) {
-      supabase.removeChannel(myChannel);
+    authSubscription?.unsubscribe();
+    if (myChannel && myClient) {
+      void myClient.removeChannel(myChannel);
       if (activeChannel === myChannel) {
         activeChannel = null;
       }

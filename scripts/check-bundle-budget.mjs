@@ -2,20 +2,40 @@ import { appendFileSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-const ASSETS_DIR = join(process.cwd(), 'dist', 'assets');
+const DIST_DIR = join(process.cwd(), 'dist');
+const ASSETS_DIR = join(DIST_DIR, 'assets');
 const KB = 1024;
 
 const BUDGETS = {
-  entryJs: 55 * KB,
+  entryJs: 34 * KB,
   entryCss: 14 * KB,
   shareModal: 11 * KB,
   priceCompareSheet: 14 * KB,
   lazyChunk: 6 * KB,
-  initialTotalJs: 250 * KB,
+  iconPackChunk: 15 * KB,
+  supabaseChunk: 62 * KB,
+  initialTotalJs: 152 * KB,
 };
 
-const LAZY_CHUNKS = ['QuickCatalogDrawer-', 'CategoryPickerSheet-', 'CreateListModal-'];
+const LAZY_CHUNKS = [
+  'QuickCatalogDrawer-',
+  'CategoryPickerSheet-',
+  'CreateListModal-',
+  'DataBackupModal-',
+  'listTextExport-',
+  'dictionaryPtBr-',
+  'PwaUpdatePrompt-',
+  'ShoppingCompleteCard-',
+  'workbox-window',
+  'syncEngine-',
+  'diagnostics-',
+  'priceEngine-',
+  'PinnedStoreBar-',
+  'navigationLink-',
+];
+const ASYNC_VENDOR_PREFIXES = ['vendor-supabase-'];
 
+const indexHtml = readFileSync(join(DIST_DIR, 'index.html'), 'utf8');
 const files = readdirSync(ASSETS_DIR).filter((f) => f.endsWith('.js') || f.endsWith('.css'));
 const rows = files
   .map((file) => {
@@ -46,11 +66,28 @@ for (const { file, gzipBytes } of rows) {
     if (gzipBytes > BUDGETS.priceCompareSheet) {
       failures.push(`${file}: ${(gzipBytes / KB).toFixed(2)} KB > ${(BUDGETS.priceCompareSheet / KB).toFixed(0)} KB`);
     }
+  } else if (file.startsWith('ProductIconPack-') && file.endsWith('.js')) {
+    if (indexHtml.includes(file)) {
+      failures.push(`${file} vazou para o preload inicial em dist/index.html`);
+    }
+    if (gzipBytes > BUDGETS.iconPackChunk) {
+      failures.push(`${file}: ${(gzipBytes / KB).toFixed(2)} KB > ${(BUDGETS.iconPackChunk / KB).toFixed(0)} KB`);
+    }
   } else if (LAZY_CHUNKS.some((prefix) => file.startsWith(prefix)) && file.endsWith('.js')) {
+    if (indexHtml.includes(file)) {
+      failures.push(`${file} vazou para o preload inicial em dist/index.html`);
+    }
     if (gzipBytes > BUDGETS.lazyChunk) {
       failures.push(`${file}: ${(gzipBytes / KB).toFixed(2)} KB > ${(BUDGETS.lazyChunk / KB).toFixed(0)} KB`);
     }
-  } else if ((file.startsWith('vendor-') || file.startsWith('workbox-')) && file.endsWith('.js')) {
+  } else if (ASYNC_VENDOR_PREFIXES.some((prefix) => file.startsWith(prefix)) && file.endsWith('.js')) {
+    if (indexHtml.includes(file)) {
+      failures.push(`${file} vazou para o preload inicial em dist/index.html`);
+    }
+    if (gzipBytes > BUDGETS.supabaseChunk) {
+      failures.push(`${file}: ${(gzipBytes / KB).toFixed(2)} KB > ${(BUDGETS.supabaseChunk / KB).toFixed(0)} KB`);
+    }
+  } else if (file.startsWith('vendor-') && file.endsWith('.js')) {
     initialTotalJs += gzipBytes;
   }
 }

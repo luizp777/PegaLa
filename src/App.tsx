@@ -5,42 +5,40 @@ import {
   createList,
   decrementItemQuantity,
   decrementOrMarkChecked,
+  deleteCheckedItems,
   deleteItem,
   deleteList,
+  duplicateList,
   getPriceComparisonCache,
   incrementItemQuantity,
   leaveList,
   recheckItems,
   renameList,
   restoreDeletedItem,
+  restoreDeletedItems,
   savePriceComparisonCache,
   setItemExactQuantityAndUnit,
   toggleItemChecked,
   uncheckAllItems,
   updateItemDetails,
 } from './db/localDb';
-import { flushPendingSync } from './db/syncEngine';
 import { useActiveList } from './hooks/useActiveList';
 import { clearPinnedStoreStorage, usePinnedStore } from './hooks/usePinnedStore';
 import { usePwaInstall } from './hooks/usePwaInstall';
 import { useTheme } from './hooks/useTheme';
 import { isPersistedStoreId, type PriceQuoteCandidate } from '../shared/priceTypes';
-import { normalizeText } from './lib/dictionaryPtBr';
-import { buildDiagnosticsReport } from './lib/diagnostics';
+import { normalizeText } from './lib/categories';
 import { isSpeechRecognitionSupported } from './lib/speechParser';
-import { ensureSupabaseSession, isSupabaseConfigured, supabase } from './lib/supabase';
+import { ensureSupabaseSession, getSupabaseClient, isSupabaseConfigured } from './lib/supabase';
 import { useWakeLock } from './lib/wakeLock';
 import { hapticLight } from './lib/haptics';
 import { ActiveListToolbar } from './components/ActiveListToolbar';
 import { GlobalToastBar, type ToastState } from './components/GlobalToastBar';
 import { Header } from './components/Header';
-import { PinnedStoreBar } from './components/PinnedStoreBar';
 import { CategoryGroup } from './components/CategoryGroup';
 import { CheckedSection } from './components/CheckedSection';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
-import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
 import { QuickAddBar, type QuickAddBarHandle } from './components/QuickAddBar';
-import { ShoppingCompleteCard } from './components/ShoppingCompleteCard';
 import type { CategoryId, ShoppingItem } from './types';
 
 const ShareModal = lazy(() =>
@@ -54,6 +52,18 @@ const CategoryPickerSheet = lazy(() =>
 );
 const PriceComparisonSheet = lazy(() =>
   import('./components/PriceComparisonSheet').then((m) => ({ default: m.PriceComparisonSheet }))
+);
+const PinnedStoreBar = lazy(() =>
+  import('./components/PinnedStoreBar').then((m) => ({ default: m.PinnedStoreBar }))
+);
+const DataBackupModal = lazy(() =>
+  import('./components/DataBackupModal').then((m) => ({ default: m.DataBackupModal }))
+);
+const ShoppingCompleteCard = lazy(() =>
+  import('./components/ShoppingCompleteCard').then((m) => ({ default: m.ShoppingCompleteCard }))
+);
+const PwaUpdatePrompt = lazy(() =>
+  import('./components/PwaUpdatePrompt').then((m) => ({ default: m.PwaUpdatePrompt }))
 );
 
 const COLLAPSED_PREFIX = 'pegala_collapsed_';
@@ -111,9 +121,10 @@ export function App() {
       message: string,
       undoItem?: ShoppingItem,
       priceItem?: ShoppingItem,
-      undoRestart?: { listId: string; itemIds: string[] }
+      undoRestart?: { listId: string; itemIds: string[] },
+      undoDeletedItems?: ShoppingItem[]
     ) => {
-      setToast({ message, undoItem, priceItem, undoRestart });
+      setToast({ message, undoItem, priceItem, undoRestart, undoDeletedItems });
     },
     []
   );
@@ -124,7 +135,30 @@ export function App() {
 
   const [shareOpen, setShareOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [dataBackupOpen, setDataBackupOpen] = useState(false);
   const [priceCompareOpen, setPriceCompareOpen] = useState(false);
+  const [pwaPromptReady, setPwaPromptReady] = useState(false);
+
+  useEffect(() => {
+    let idleHandle: number | null = null;
+    let timerHandle: ReturnType<typeof setTimeout> | null = null;
+    const enable = () => setPwaPromptReady(true);
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      idleHandle = window.requestIdleCallback(enable, { timeout: 1000 });
+    } else {
+      timerHandle = setTimeout(enable, 300);
+    }
+
+    return () => {
+      if (idleHandle !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleHandle);
+      }
+      if (timerHandle !== null) {
+        clearTimeout(timerHandle);
+      }
+    };
+  }, []);
   const [quickPriceItem, setQuickPriceItem] = useState<ShoppingItem | null>(null);
   const [quickPriceValue, setQuickPriceValue] = useState('');
   const [isSavingQuickPrice, setIsSavingQuickPrice] = useState(false);
@@ -196,7 +230,10 @@ export function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const duration = toast.undoItem || toast.undoRestart || toast.priceItem ? 4500 : 2500;
+    const duration =
+      toast.undoItem || toast.undoDeletedItems?.length || toast.undoRestart || toast.priceItem
+        ? 4500
+        : 2500;
     const t = setTimeout(() => setToast(null), duration);
     return () => clearTimeout(t);
   }, [toast]);
@@ -290,6 +327,7 @@ export function App() {
     hapticLight();
     setIsSyncing(true);
     try {
+      const { flushPendingSync } = await import('./db/syncEngine');
       const ok = await flushPendingSync();
       showToast(
         ok
@@ -303,6 +341,7 @@ export function App() {
 
   const handleCopyDiagnostics = useCallback(async () => {
     try {
+      const { buildDiagnosticsReport } = await import('./lib/diagnostics');
       const report = await buildDiagnosticsReport();
       await navigator.clipboard.writeText(report);
       showToast('Diagnóstico copiado!');
@@ -331,7 +370,7 @@ export function App() {
 
   const handleSaveQuickPrice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quickPriceItem || !pinnedStore || !supabase || isSavingQuickPrice) return;
+    if (!quickPriceItem || !pinnedStore || !isSupabaseConfigured || isSavingQuickPrice) return;
     const val = Number(quickPriceValue.replace(',', '.'));
     if (!Number.isFinite(val) || val < 0.1) {
       showToast('Informe um preço válido (ex.: 5,49).');
@@ -340,7 +379,12 @@ export function App() {
     setIsSavingQuickPrice(true);
     try {
       await ensureSupabaseSession();
-      const { data, error } = await supabase.rpc('report_community_price', {
+      const client = await getSupabaseClient();
+      if (!client) {
+        showToast('Supabase indisponível no momento.');
+        return;
+      }
+      const { data, error } = await client.rpc('report_community_price', {
         p_store_id: pinnedStore.id,
         p_normalized_term: quickPriceItem.normalizedName,
         p_product_title: quickPriceItem.name,
@@ -462,12 +506,61 @@ export function App() {
   );
 
   const handleUndoDelete = async () => {
-    if (!toast?.undoItem) return;
-    hapticLight();
-    const itemToRestore = toast.undoItem;
-    setToast(null);
-    await restoreDeletedItem(itemToRestore);
+    if (toast?.undoItem) {
+      hapticLight();
+      const itemToRestore = toast.undoItem;
+      setToast(null);
+      await restoreDeletedItem(itemToRestore);
+      return;
+    }
+    if (toast?.undoDeletedItems && toast.undoDeletedItems.length > 0) {
+      hapticLight();
+      const itemsToRestore = toast.undoDeletedItems;
+      setToast(null);
+      await restoreDeletedItems(itemsToRestore);
+    }
   };
+
+  const handleClearChecked = useCallback(async () => {
+    if (!activeList) return;
+    hapticLight();
+    const removed = await deleteCheckedItems(activeList.id);
+    if (removed.length > 0) {
+      showToast(
+        `${removed.length} ${removed.length === 1 ? 'item removido' : 'itens removidos'} do carrinho`,
+        undefined,
+        undefined,
+        undefined,
+        removed
+      );
+    }
+  }, [activeList, showToast]);
+
+  const handleDuplicateList = useCallback(
+    async (id: string) => {
+      hapticLight();
+      const created = await duplicateList(id);
+      if (created) {
+        selectList(created.id);
+        showToast(`Lista "${created.name}" criada!`);
+      }
+    },
+    [selectList, showToast]
+  );
+
+  const handleCopyListAsText = useCallback(async () => {
+    if (!activeList || groupedPending.length === 0) return;
+    hapticLight();
+    try {
+      const { formatPendingListForShare } = await import('./lib/listTextExport');
+      const text = formatPendingListForShare(activeList.name, groupedPending);
+      if (!text) return;
+      await navigator.clipboard.writeText(text);
+      showToast('Lista copiada por corredores!');
+    } catch {
+      showToast('Não foi possível copiar a lista agora.');
+    }
+  }, [activeList, groupedPending, showToast]);
 
   const handleUndoRestart = async () => {
     if (!toast?.undoRestart) return;
@@ -477,7 +570,7 @@ export function App() {
     await recheckItems(listId, itemIds);
   };
 
-  const handleRestartList = async () => {
+  const handleRestartList = useCallback(async () => {
     if (!activeList) return;
     hapticLight();
     const checkedIds = checkedItems.map((i) => i.id);
@@ -490,7 +583,7 @@ export function App() {
         { listId: activeList.id, itemIds: checkedIds }
       );
     }
-  };
+  }, [activeList, checkedItems, showToast]);
 
   const handleCreateList = async (name: string, type: 'mercado' | 'farmacia' | 'geral') => {
     const created = await createList(name, type);
@@ -498,32 +591,74 @@ export function App() {
     showToast(`Lista "${created.name}" criada!`);
   };
 
-  const handleDeleteList = async (id: string) => {
-    clearPinnedStoreStorage(id);
-    await deleteList(id);
-    const remaining = lists.filter((l) => l.id !== id);
-    if (remaining.length > 0) {
-      selectList(remaining[0].id);
-    }
-  };
+  const handleDeleteList = useCallback(
+    async (id: string) => {
+      clearPinnedStoreStorage(id);
+      await deleteList(id);
+      const remaining = lists.filter((l) => l.id !== id);
+      if (remaining.length > 0) {
+        selectList(remaining[0].id);
+      }
+    },
+    [lists, selectList]
+  );
 
-  const handleLeaveList = async (id: string) => {
-    clearPinnedStoreStorage(id);
-    const target = lists.find((l) => l.id === id);
-    await leaveList(id);
-    const remaining = lists.filter((l) => l.id !== id);
-    if (remaining.length > 0) {
-      selectList(remaining[0].id);
-    }
-    if (target) {
-      showToast(`Você saiu da lista "${target.name}"`);
-    }
-  };
+  const handleLeaveList = useCallback(
+    async (id: string) => {
+      clearPinnedStoreStorage(id);
+      const target = lists.find((l) => l.id === id);
+      await leaveList(id);
+      const remaining = lists.filter((l) => l.id !== id);
+      if (remaining.length > 0) {
+        selectList(remaining[0].id);
+      }
+      if (target) {
+        showToast(`Você saiu da lista "${target.name}"`);
+      }
+    },
+    [lists, selectList, showToast]
+  );
 
-  const handleRenameList = async (id: string, newName: string) => {
-    await renameList(id, newName);
-    showToast(`Lista renomeada para "${newName}"`);
-  };
+  const handleRenameList = useCallback(
+    async (id: string, newName: string) => {
+      await renameList(id, newName);
+      showToast(`Lista renomeada para "${newName}"`);
+    },
+    [showToast]
+  );
+
+  const handleOpenCreateList = useCallback(() => setCreateOpen(true), []);
+  const handleOpenDataBackup = useCallback(() => setDataBackupOpen(true), []);
+  const handleOpenShare = useCallback(() => setShareOpen(true), []);
+  const handleOpenPriceComparison = useCallback(() => setPriceCompareOpen(true), []);
+  const handleShowToastMsg = useCallback((msg: string) => showToast(msg), [showToast]);
+  const handleRenameListFromHeader = useCallback(
+    (id: string, newName: string) => {
+      void handleRenameList(id, newName);
+    },
+    [handleRenameList]
+  );
+  const handleDuplicateListFromHeader = useCallback(
+    (id: string) => {
+      void handleDuplicateList(id);
+    },
+    [handleDuplicateList]
+  );
+  const handleForceSyncFromHeader = useCallback(() => {
+    void handleForceSync();
+  }, [handleForceSync]);
+  const handleCopyDiagnosticsFromHeader = useCallback(() => {
+    void handleCopyDiagnostics();
+  }, [handleCopyDiagnostics]);
+  const handleRestartAllSync = useCallback(() => {
+    void handleRestartList();
+  }, [handleRestartList]);
+  const handleClearCheckedSync = useCallback(() => {
+    void handleClearChecked();
+  }, [handleClearChecked]);
+  const handleCopyListTextSync = useCallback(() => {
+    void handleCopyListAsText();
+  }, [handleCopyListAsText]);
 
   const handleSaveItemDetails = async (
     item: ShoppingItem,
@@ -546,11 +681,13 @@ export function App() {
           pendingCount={pendingCount}
           checkedCount={checkedItems.length}
           onSelectList={selectList}
-          onRenameList={(id, newName) => void handleRenameList(id, newName)}
-          onOpenCreateList={() => setCreateOpen(true)}
+          onRenameList={handleRenameListFromHeader}
+          onOpenCreateList={handleOpenCreateList}
           onDeleteList={handleDeleteList}
           onLeaveList={handleLeaveList}
-          onOpenShare={() => setShareOpen(true)}
+          onDuplicateList={handleDuplicateListFromHeader}
+          onOpenDataBackup={handleOpenDataBackup}
+          onOpenShare={handleOpenShare}
           isDark={isDark}
           onToggleTheme={toggleTheme}
           wakeLockSupported={wakeLock.isSupported}
@@ -559,16 +696,18 @@ export function App() {
           isOnline={isOnline}
           pendingSyncCount={pendingSyncCount}
           isSyncing={isSyncing}
-          onForceSync={() => void handleForceSync()}
-          onCopyDiagnostics={() => void handleCopyDiagnostics()}
+          onForceSync={handleForceSyncFromHeader}
+          onCopyDiagnostics={handleCopyDiagnosticsFromHeader}
         />
         {pinnedStore && pinnedSummary && (
-          <PinnedStoreBar
-            store={pinnedStore}
-            summary={pinnedSummary}
-            onOpenComparator={() => setPriceCompareOpen(true)}
-            onUnpin={unpinStore}
-          />
+          <Suspense fallback={null}>
+            <PinnedStoreBar
+              store={pinnedStore}
+              summary={pinnedSummary}
+              onOpenComparator={handleOpenPriceComparison}
+              onUnpin={unpinStore}
+            />
+          </Suspense>
         )}
       </div>
 
@@ -700,7 +839,8 @@ export function App() {
               allCollapsed={allCollapsed}
               onToggleAllCollapsed={handleToggleAllCollapsed}
               canComparePrices={isSupabaseConfigured && !pinnedStore && (pendingCount > 0 || checkedItems.length > 0)}
-              onOpenPriceComparison={() => setPriceCompareOpen(true)}
+              onOpenPriceComparison={handleOpenPriceComparison}
+              onCopyListText={handleCopyListTextSync}
             />
 
             {/* Pending Items Grouped by Aisle / Category */}
@@ -731,12 +871,14 @@ export function App() {
 
             {/* Celebratory Completion Summary Card when only checked items remain */}
             {pendingCount === 0 && checkedItems.length > 0 && activeList && (
-              <ShoppingCompleteCard
-                listName={activeList.name}
-                checkedItems={checkedItems}
-                onRestartAll={() => void handleRestartList()}
-                onShowToast={(msg) => showToast(msg)}
-              />
+              <Suspense fallback={null}>
+                <ShoppingCompleteCard
+                  listName={activeList.name}
+                  checkedItems={checkedItems}
+                  onRestartAll={handleRestartAllSync}
+                  onShowToast={handleShowToastMsg}
+                />
+              </Suspense>
             )}
 
             {/* Checked ("No carrinho / Já tenho") Permanent Section */}
@@ -748,14 +890,19 @@ export function App() {
               onDecrement={handleRowDecrement}
               onOpenCategoryPicker={handleOpenCategoryPicker}
               onDelete={handleDelete}
-              onRestartAll={() => void handleRestartList()}
+              onRestartAll={handleRestartAllSync}
+              onClearChecked={handleClearCheckedSync}
             />
           </>
         )}
       </main>
 
-      {/* PWA Update Available Prompt */}
-      <PwaUpdatePrompt />
+      {/* PWA Update Available Prompt (deferred after first paint) */}
+      {pwaPromptReady && (
+        <Suspense fallback={null}>
+          <PwaUpdatePrompt />
+        </Suspense>
+      )}
 
       {/* Thumb-Zone Bottom Dock (Catalog Drawer + List Tabs + Qty Pills + Voice + Paste + Input) */}
       <QuickAddBar
@@ -763,7 +910,7 @@ export function App() {
         lists={lists}
         activeList={activeList}
         onSelectList={selectList}
-        onOpenCreateList={() => setCreateOpen(true)}
+        onOpenCreateList={handleOpenCreateList}
         onAddText={handleAddText}
         onIncrementItem={handleIncrementItem}
         onDecrementItem={handleCatalogDecrement}
@@ -771,7 +918,7 @@ export function App() {
         userHistory={frequentSuggestions}
         uncheckedByNormalizedName={uncheckedByNormalizedName}
         checkedByNormalizedName={checkedByNormalizedName}
-        onShowToast={(msg) => showToast(msg)}
+        onShowToast={handleShowToastMsg}
       />
 
       {/* Modals & Bottom Sheets (lazy-loaded on demand) */}
@@ -795,6 +942,17 @@ export function App() {
               selectList(id);
               showToast('Lista compartilhada adicionada!');
             }}
+            onCopyListText={handleCopyListTextSync}
+            pendingCount={pendingCount}
+          />
+        )}
+
+        {dataBackupOpen && (
+          <DataBackupModal
+            open={dataBackupOpen}
+            onClose={() => setDataBackupOpen(false)}
+            onSelectList={selectList}
+            onShowToast={handleShowToastMsg}
           />
         )}
 

@@ -12,15 +12,16 @@ Aplicativo **PWA (Progressive Web App) Offline-First** para lista ultra-rápida 
   - Carregado sob demanda (lazy chunk), com busca instantânea, abas por corredor e toques sucessivos (`1x`, `2x`, `3x`...) sem abrir o teclado principal.
   - Atalhos interativos diretamente no estado vazio da lista para abrir o catálogo, ditar por voz ou colar do WhatsApp.
 - **Navegação Rápida & Organização por Corredores**:
-  - Busca instantânea na lista ativa (a partir de 8 itens), pílulas de filtro por corredor e controle para recolher/expandir todos os corredores com estado persistido por lista.
-  - Edição completa de itens em Bottom Sheet (nome, quantidade, unidade, corredor e exclusão acessível no mobile) + renomeação inline de listas no menu.
+  - Busca instantânea na lista ativa (a partir de 8 itens), pílulas de filtro por corredor, copiar lista pendente formatada por corredores (pronta para WhatsApp) e controle para recolher/expandir todos os corredores com estado persistido por lista.
+  - Edição completa de itens em Bottom Sheet (nome, quantidade, unidade, corredor e exclusão acessível no mobile) + renomeação inline e duplicação de listas no menu.
 - **Digitação Inteligente, Voz & WhatsApp Paste**:
   - Digite ou dite `2 leite integral`, `1,5kg batata` ou `dipirona 500mg 2 cx` para separar quantidade, unidade e nome automaticamente (preservando expressões compostas como `água e sal` e `vitamina e`).
   - Cole uma lista inteira do WhatsApp (com múltiplas linhas e marcadores) com 1 toque.
-- **Permanência & Seção "No carrinho / Já tenho"**:
-  - Itens comprados permanecem salvos (exibindo quantidade para conferência) para reativação rápida em modo **Lista** ou **Grade compacta** (preferência persistida), com filtro instantâneo e botão **Recomeçar** (com toast **Desfazer** para evitar perda acidental).
+- **Permanência, Backup Local & Seção "No carrinho / Já tenho"**:
+  - Itens comprados permanecem salvos (exibindo quantidade para conferência) para reativação rápida em modo **Lista** ou **Grade compacta** (preferência persistida), com filtro instantâneo, botão **Recomeçar** e limpeza em lote (**Limpar** com toast **Desfazer**).
+  - Modal **Dados e Backup** (lazy-loaded) no menu de listas: contadores locais do IndexedDB, exportação/importação JSON versionada (modos **Mesclar** ou **Substituir tudo** com confirmação) e limpeza seletiva de cache de preços ou histórico de sugestões.
   - Card celebratório de conclusão de compra com métricas e compartilhamento de resumo (Web Share / Clipboard).
-  - Stepper inline de 44px com trava no mínimo da unidade (`1x`, `50g`, `0.5kg`) e exclusão por swipe com feedback háptico no limiar (mobile) ou botão de lixeira (desktop/tablets/sheet) com toast **Desfazer**.
+  - Stepper inline de 44px com trava no mínimo da unidade (`1x`, `50g`, `0.5kg`) e exclusão por swipe 60fps com feedback háptico no limiar (mobile) ou botão de lixeira (desktop/tablets/sheet) com toast **Desfazer**.
 - **Comparador de Preços (Mercado & Farmácia — Requer Supabase)**:
   - Descoberta de estabelecimentos próximos via **GPS** ou **CEP** (raio de `1`, `3`, `5` ou `10 km`) usando OpenStreetMap (Overpass/Nominatim) e ViaCEP.
   - Consulta híbrida com streaming progressivo (NDJSON): combina **preços online** de 10 redes brasileiras (Mambo, Oba Hortifruti, Swift, Sam's Club, Confiança, Tauste, Jaú Serve, Drogaria São Paulo, Drogarias Pacheco e Pague Menos) com **preços colaborativos** informados pela comunidade.
@@ -29,6 +30,7 @@ Aplicativo **PWA (Progressive Web App) Offline-First** para lista ultra-rápida 
 - **Offline-First + Sincronização em Tempo Real**:
   - Funciona 100% offline via **IndexedDB (Dexie.js)** com transações atômicas, fila de mutações coalescida em lotes e coordenação multi-aba via **Web Locks API** (inclusive na inicialização de listas padrão).
   - Sincroniza instantaneamente entre dispositivos via **Supabase Realtime** (PostgreSQL + RLS + `REPLICA IDENTITY FULL` + deduplicação por `normalized_name` + fallback automático de reconexão + gatilho manual no cabeçalho) e convite por link, código `PEGA-XXXXXX` ou QR Code.
+- **Performance & PWA**: Code-splitting agressivo (`~143.6 KB` gzip iniciais; entry `~30.5 KB` gzip) com lazy-load pós-paint do SDK Supabase, `syncEngine`, `dictionaryPtBr`, `priceEngine`, `ProductIconPack` e `PwaUpdatePrompt`, swipe 60fps via DOM refs, `content-visibility: auto`, batching IndexedDB (`enqueueSyncBatch`) e cache HTTP `immutable` na Vercel (`vercel.json`) + `runtimeCaching` no Workbox.
 - **Observabilidade & Segurança**:
   - Logger estruturado próprio (`src/lib/logger.ts`) segmentado por domínio (`App`, `Sync`, `Auth`, `DB`, `UI`), `AppErrorBoundary` raiz e captura global de erros.
   - Cabeçalhos de segurança HTTP e CSP estrita sem `'unsafe-inline'` em `script-src` (`vercel.json` + `public/theme-init.js`).
@@ -88,4 +90,4 @@ Sem essas variáveis, o PegaLá opera automaticamente em modo **100% local (Offl
 
 ## Histórico de Evolução
 
-O detalhamento dos ciclos concluídos (Ciclos 1 a 11 — Segurança, Design Review, Code Review, Performance/Escala, Acessibilidade, Estabilidade, Engenharia/Infraestrutura, Comparador de Preços, Loja Fixada/Navegação e Hardening & Refatoração Geral) está documentado em [`status.md`](./status.md).
+O detalhamento dos ciclos concluídos (Ciclos 1 a 12 — Segurança, Design Review, Code Review, Performance/Escala, Acessibilidade, Estabilidade, Engenharia/Infraestrutura, Comparador de Preços, Loja Fixada/Navegação, Hardening & Refatoração Geral e Otimização Extrema de Performance + Backup Local) está documentado em [`status.md`](./status.md).

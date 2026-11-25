@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Minus, Plus, Search, Sparkles, X, Zap } from 'lucide-react';
 import type { CategoryId, ListType, ShoppingItem, UserDictionaryEntry } from '../types';
-import { CATEGORIES, normalizeText } from '../lib/dictionaryPtBr';
+import { CATEGORIES, normalizeText } from '../lib/categories';
 import { CATALOG_BY_CATEGORY } from '../lib/catalogPtBr';
 import { formatQuantity } from '../lib/itemParser';
 import { hapticLight } from '../lib/haptics';

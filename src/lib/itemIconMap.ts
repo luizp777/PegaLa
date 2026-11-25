@@ -1,5 +1,5 @@
 import type { CategoryId } from '../types';
-import { hasWholePhrase, normalizeText } from './dictionaryPtBr';
+import { hasWholePhrase, normalizeText } from './categories';
 
 /**
  * Chaves dos ícones vetoriais minimalistas (Lucide + SVGs line-art duotone sob medida).

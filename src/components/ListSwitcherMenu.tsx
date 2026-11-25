@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Activity, Check, Lock, LogOut, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { Activity, Check, Copy, Database, Lock, LogOut, Pencil, Plus, Trash2, Users } from 'lucide-react';
 import type { ShoppingList } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { ListTypeIcon } from './ItemIcon';
@@ -26,6 +26,10 @@ interface ListSwitcherMenuProps {
   onDeleteList: (id: string) => void;
   /** Remove a participação do usuário em uma lista compartilhada. */
   onLeaveList: (id: string) => void;
+  /** Duplica uma lista existente como nova lista local pronta para nova compra. */
+  onDuplicateList?: (id: string) => void;
+  /** Abre o modal de Dados e Backup Local. */
+  onOpenDataBackup?: () => void;
   /** Copia o relatório técnico de diagnóstico (sem PII). */
   onCopyDiagnostics?: () => void;
   /** Fecha o menu suspenso. */
@@ -48,6 +52,8 @@ export function ListSwitcherMenu({
   onOpenCreateList,
   onDeleteList,
   onLeaveList,
+  onDuplicateList,
+  onOpenDataBackup,
   onCopyDiagnostics,
   onClose,
 }: ListSwitcherMenuProps) {
@@ -147,20 +153,40 @@ export function ListSwitcherMenu({
                     </div>
                   </button>
                   <div className="ml-1 flex shrink-0 items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingListId(list.id);
-                        setEditingName(list.name);
-                        setConfirmDeleteId(null);
-                      }}
-                      className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-200/60 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                      aria-label={`Renomear ${list.name}`}
-                      title="Renomear lista"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
+                    {confirmDeleteId !== list.id && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingListId(list.id);
+                            setEditingName(list.name);
+                            setConfirmDeleteId(null);
+                          }}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-200/60 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                          aria-label={`Renomear ${list.name}`}
+                          title="Renomear lista"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        {onDuplicateList && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(null);
+                              onDuplicateList(list.id);
+                              onClose();
+                            }}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-200/60 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                            aria-label={`Duplicar ${list.name}`}
+                            title="Duplicar lista"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </>
+                    )}
                     {lists.length > 1 && (() => {
                       const awaitingSession = Boolean(
                         isSupabaseConfigured && list.isShared && list.ownerId && !sessionLoaded
@@ -260,6 +286,20 @@ export function ListSwitcherMenu({
           <Plus className="h-4 w-4" />
           Nova lista
         </button>
+        {onOpenDataBackup && (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onClose();
+              onOpenDataBackup();
+            }}
+            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            <Database className="h-3.5 w-3.5" />
+            Dados e Backup
+          </button>
+        )}
         {onCopyDiagnostics && (
           <button
             type="button"

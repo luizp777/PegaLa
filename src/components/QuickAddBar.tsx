@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
+import { lazy, memo, Suspense, useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import {
   Check,
   ClipboardPaste,
@@ -10,12 +10,32 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react';
-import { normalizeText, searchDictionary } from '../lib/dictionaryPtBr';
+import { normalizeText } from '../lib/categories';
 import { hapticLight, hapticSuccess } from '../lib/haptics';
 import { serializeError, uiLogger } from '../lib/logger';
 import { useVoiceInput } from '../lib/speechParser';
 import type { CategoryId, ShoppingItem, ShoppingList, UserDictionaryEntry } from '../types';
 import { ItemIcon, ListTypeIcon } from './ItemIcon';
+
+type SearchDictionaryFn = typeof import('../lib/dictionaryPtBr').searchDictionary;
+let cachedSearchDictionary: SearchDictionaryFn | null = null;
+let searchDictionaryPromise: Promise<SearchDictionaryFn | null> | null = null;
+
+function loadSearchDictionary(): Promise<SearchDictionaryFn | null> {
+  if (cachedSearchDictionary) return Promise.resolve(cachedSearchDictionary);
+  if (!searchDictionaryPromise) {
+    searchDictionaryPromise = import('../lib/dictionaryPtBr')
+      .then((m) => {
+        cachedSearchDictionary = m.searchDictionary;
+        return cachedSearchDictionary;
+      })
+      .catch(() => {
+        searchDictionaryPromise = null;
+        return null;
+      });
+  }
+  return searchDictionaryPromise;
+}
 
 const QuickCatalogDrawer = lazy(() =>
   import('./QuickCatalogDrawer').then((m) => ({ default: m.QuickCatalogDrawer }))
@@ -85,7 +105,7 @@ const QUICK_QTY_PILLS: Array<{ label: string; prefix: string; qty: number; unit:
  * @param props - Propriedades da barra inferior de inclusão rápida.
  * @returns Dock inferior renderizado.
  */
-export function QuickAddBar({
+export const QuickAddBar = memo(function QuickAddBar({
   barRef,
   lists,
   activeList,
@@ -103,8 +123,24 @@ export function QuickAddBar({
   const [value, setValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [searchDictFn, setSearchDictFn] = useState<SearchDictionaryFn | null>(
+    () => cachedSearchDictionary
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (searchDictFn || (!isFocused && value.length < 2)) return;
+    let cancelled = false;
+    void loadSearchDictionary().then((fn) => {
+      if (!cancelled && fn) {
+        setSearchDictFn(() => fn);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isFocused, value.length, searchDictFn]);
 
   const voice = useVoiceInput(
     async (normalizedText) => {
@@ -197,8 +233,10 @@ export function QuickAddBar({
     return dups;
   }, [lists]);
 
+  const deferredValue = useDeferredValue(value);
+
   const suggestions = useMemo(() => {
-    const norm = normalizeText(value);
+    const norm = normalizeText(deferredValue);
     if (norm.length < 2) return [];
 
     // Strip leading quantity so typing "2 lei" still suggests "Leite integral"
@@ -226,7 +264,7 @@ export function QuickAddBar({
       if (results.length >= 4) break;
     }
 
-    for (const d of searchDictionary(lookup, 6)) {
+    for (const d of searchDictFn ? searchDictFn(lookup, 6) : []) {
       const n = normalizeText(d.term);
       if (!seen.has(n) && !uncheckedByNormalizedName.has(n)) {
         seen.add(n);
@@ -241,7 +279,7 @@ export function QuickAddBar({
     }
 
     return results;
-  }, [value, userHistory, uncheckedByNormalizedName, checkedByNormalizedName]);
+  }, [deferredValue, userHistory, uncheckedByNormalizedName, checkedByNormalizedName, searchDictFn]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -553,4 +591,4 @@ export function QuickAddBar({
       </div>
     </>
   );
-}
+});

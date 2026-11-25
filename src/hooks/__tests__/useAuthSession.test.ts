@@ -6,16 +6,21 @@ const getSessionMock = vi.fn();
 const unsubscribeMock = vi.fn();
 let authCallback: ((event: string, session: { user?: { id: string } } | null) => void) | null = null;
 
-vi.mock('../../lib/supabase', () => ({
-  supabase: {
-    auth: {
-      getSession: () => getSessionMock(),
-      onAuthStateChange: (cb: (event: string, session: { user?: { id: string } } | null) => void) => {
-        authCallback = cb;
-        return { data: { subscription: { unsubscribe: unsubscribeMock } } };
-      },
+const mockAuthClient = vi.hoisted(() => ({
+  auth: {
+    getSession: () => getSessionMock(),
+    onAuthStateChange: (cb: (event: string, session: { user?: { id: string } } | null) => void) => {
+      authCallback = cb;
+      return { data: { subscription: { unsubscribe: unsubscribeMock } } };
     },
   },
+}));
+
+vi.mock('../../lib/supabase', () => ({
+  isSupabaseConfigured: true,
+  hasImmediateAuthOrJoinIntent: () => true,
+  getSupabaseClient: vi.fn(async () => mockAuthClient),
+  supabase: mockAuthClient,
 }));
 
 import { useAuthSession } from '../useAuthSession';

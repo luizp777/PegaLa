@@ -11,54 +11,58 @@ const mockDeleteListMembers = vi.fn();
 const mockRefreshSession = vi.fn();
 const mockRpc = vi.fn();
 
+const mockSupabaseClient = vi.hoisted(() => ({
+  auth: {
+    refreshSession: () => mockRefreshSession(),
+  },
+  rpc: (...args: unknown[]) => ({
+    returns: () => mockRpc(...args),
+  }),
+  from: (table: string) => {
+    if (table === 'lists') {
+      return {
+        upsert: (...args: unknown[]) => mockUpsertLists(...args),
+        select: () => ({
+          eq: () => ({
+            maybeSingle: () => mockSelectListMaybeSingle(),
+          }),
+        }),
+        delete: () => ({ eq: vi.fn(async () => ({ error: null })) }),
+      };
+    }
+    if (table === 'list_items') {
+      return {
+        upsert: (...args: unknown[]) => mockUpsertItems(...args),
+        select: () => ({
+          eq: () => ({
+            returns: () => mockSelectItemsEq(),
+          }),
+        }),
+        delete: () => ({
+          eq: vi.fn(async () => ({ error: null })),
+          in: (...args: unknown[]) => mockDeleteItemsIn(...args),
+        }),
+      };
+    }
+    if (table === 'list_members') {
+      return {
+        delete: () => ({
+          eq: () => ({
+            eq: (...args: unknown[]) => mockDeleteListMembers(...args),
+          }),
+        }),
+      };
+    }
+    return {};
+  },
+}));
+
 vi.mock('../../lib/supabase', () => ({
   isSupabaseConfigured: true,
+  hasImmediateAuthOrJoinIntent: () => false,
+  getSupabaseClient: vi.fn(async () => mockSupabaseClient),
   ensureSupabaseSession: vi.fn(async () => ({ id: 'user-1' })),
-  supabase: {
-    auth: {
-      refreshSession: () => mockRefreshSession(),
-    },
-    rpc: (...args: unknown[]) => ({
-      returns: () => mockRpc(...args),
-    }),
-    from: (table: string) => {
-      if (table === 'lists') {
-        return {
-          upsert: (...args: unknown[]) => mockUpsertLists(...args),
-          select: () => ({
-            eq: () => ({
-              maybeSingle: () => mockSelectListMaybeSingle(),
-            }),
-          }),
-          delete: () => ({ eq: vi.fn(async () => ({ error: null })) }),
-        };
-      }
-      if (table === 'list_items') {
-        return {
-          upsert: (...args: unknown[]) => mockUpsertItems(...args),
-          select: () => ({
-            eq: () => ({
-              returns: () => mockSelectItemsEq(),
-            }),
-          }),
-          delete: () => ({
-            eq: vi.fn(async () => ({ error: null })),
-            in: (...args: unknown[]) => mockDeleteItemsIn(...args),
-          }),
-        };
-      }
-      if (table === 'list_members') {
-        return {
-          delete: () => ({
-            eq: () => ({
-              eq: (...args: unknown[]) => mockDeleteListMembers(...args),
-            }),
-          }),
-        };
-      }
-      return {};
-    },
-  },
+  supabase: mockSupabaseClient,
 }));
 
 import { flushPendingSync, joinSharedListByCode, pullListFromCloud, syncListNow } from '../syncEngine';

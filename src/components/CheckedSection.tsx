@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
-import { ChevronDown, LayoutGrid, List, RotateCcw, Search, ShoppingCart, X } from 'lucide-react';
+import { memo, useMemo, useState } from 'react';
+import { ChevronDown, LayoutGrid, List, RotateCcw, Search, ShoppingCart, Trash2, X } from 'lucide-react';
 import type { ShoppingItem } from '../types';
-import { normalizeText } from '../lib/dictionaryPtBr';
+import { normalizeText } from '../lib/categories';
 import { hapticSuccess } from '../lib/haptics';
 import { ItemIcon } from './ItemIcon';
 import { ShoppingItemRow } from './ShoppingItemRow';
@@ -24,6 +24,8 @@ interface CheckedSectionProps {
   onDelete: (item: ShoppingItem) => void;
   /** Devolve todos os itens marcados de volta para compra ativa sem apagar nenhum item salvo. */
   onRestartAll: () => void;
+  /** Remove em lote todos os itens marcados ("No carrinho / Já tenho"), com opção Desfazer. */
+  onClearChecked?: () => void;
 }
 
 const VIEW_MODE_KEY = 'pegala_checked_view';
@@ -36,7 +38,7 @@ const VIEW_MODE_KEY = 'pegala_checked_view';
  * @param props - Propriedades da seção de itens comprados/em casa.
  * @returns Seção renderizada ou `null` quando não há itens marcados.
  */
-export function CheckedSection({
+export const CheckedSection = memo(function CheckedSection({
   items,
   onToggle,
   onIncrement,
@@ -44,6 +46,7 @@ export function CheckedSection({
   onOpenCategoryPicker,
   onDelete,
   onRestartAll,
+  onClearChecked,
 }: CheckedSectionProps) {
   const [expanded, setExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
@@ -76,7 +79,7 @@ export function CheckedSection({
   if (items.length === 0) return null;
 
   return (
-    <section className="mt-6 overflow-hidden rounded-2xl border border-zinc-200/70 bg-zinc-100/70 dark:border-zinc-800/70 dark:bg-zinc-900/40">
+    <section className="cv-group mt-6 overflow-hidden rounded-2xl border border-zinc-200/70 bg-zinc-100/70 dark:border-zinc-800/70 dark:bg-zinc-900/40">
       <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
         <button
           type="button"
@@ -113,6 +116,18 @@ export function CheckedSection({
             <RotateCcw className="h-3.5 w-3.5" />
             <span>Recomeçar</span>
           </button>
+
+          {onClearChecked && (
+            <button
+              type="button"
+              onClick={onClearChecked}
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-zinc-500 transition hover:bg-red-50 hover:text-red-600 active:scale-95 dark:text-zinc-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+              aria-label="Limpar itens no carrinho"
+              title="Limpar todos os itens marcados"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -183,4 +198,4 @@ export function CheckedSection({
       )}
     </section>
   );
-}
+});

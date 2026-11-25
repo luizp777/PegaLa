@@ -162,45 +162,46 @@ export default {
         };
 
         try {
-          // 1. Cache-first no Supabase (preços online válidos + comunidade das lojas)
+          // 1. Cache-first no Supabase em paralelo (preços da comunidade das lojas + preços online válidos)
           const cachedCandidates: PriceQuoteCandidate[] = [];
+          const cacheSelect =
+            'id, store_id, chain_slug, normalized_term, product_key, product_title, brand, ean, pack_quantity, pack_unit, price_cents, source, weight, observed_at, expires_at';
 
-          if (storeIds.length > 0) {
-            const { data: storePrices, error: storeErr } = await admin
-              .from('store_prices')
-              .select(
-                'id, store_id, chain_slug, normalized_term, product_key, product_title, brand, ean, pack_quantity, pack_unit, price_cents, source, weight, observed_at, expires_at'
-              )
-              .in('store_id', storeIds)
-              .in('normalized_term', uniqueTerms)
-              .gt('expires_at', nowIso)
-              .order('observed_at', { ascending: false })
-              .limit(1000);
-            if (storeErr) {
-              console.warn('[PegaLa:Quotes] Erro ao ler cache por loja', storeErr.message);
-            } else if (storePrices) {
-              cachedCandidates.push(...(storePrices as StorePriceDbRow[]).map(mapDbRowToCandidate));
-            }
+          const [storeRes, onlineRes] = await Promise.all([
+            storeIds.length > 0
+              ? admin
+                  .from('store_prices')
+                  .select(cacheSelect)
+                  .in('store_id', storeIds)
+                  .in('normalized_term', uniqueTerms)
+                  .gt('expires_at', nowIso)
+                  .order('observed_at', { ascending: false })
+                  .limit(1000)
+              : Promise.resolve({ data: null, error: null }),
+            requestedChains.length > 0 && hasRealCep
+              ? admin
+                  .from('store_prices')
+                  .select(cacheSelect)
+                  .eq('source', 'online')
+                  .eq('cep_prefix', cepPrefix)
+                  .in('chain_slug', requestedChains)
+                  .in('normalized_term', uniqueTerms)
+                  .gt('expires_at', nowIso)
+                  .order('observed_at', { ascending: false })
+                  .limit(1500)
+              : Promise.resolve({ data: null, error: null }),
+          ]);
+
+          if (storeRes.error) {
+            console.warn('[PegaLa:Quotes] Erro ao ler cache por loja', storeRes.error.message);
+          } else if (storeRes.data) {
+            cachedCandidates.push(...(storeRes.data as StorePriceDbRow[]).map(mapDbRowToCandidate));
           }
 
-          if (requestedChains.length > 0 && hasRealCep) {
-            const { data: onlinePrices, error: onlineErr } = await admin
-              .from('store_prices')
-              .select(
-                'id, store_id, chain_slug, normalized_term, product_key, product_title, brand, ean, pack_quantity, pack_unit, price_cents, source, weight, observed_at, expires_at'
-              )
-              .eq('source', 'online')
-              .eq('cep_prefix', cepPrefix)
-              .in('chain_slug', requestedChains)
-              .in('normalized_term', uniqueTerms)
-              .gt('expires_at', nowIso)
-              .order('observed_at', { ascending: false })
-              .limit(1500);
-            if (onlineErr) {
-              console.warn('[PegaLa:Quotes] Erro ao ler cache online', onlineErr.message);
-            } else if (onlinePrices) {
-              cachedCandidates.push(...(onlinePrices as StorePriceDbRow[]).map(mapDbRowToCandidate));
-            }
+          if (onlineRes.error) {
+            console.warn('[PegaLa:Quotes] Erro ao ler cache online', onlineRes.error.message);
+          } else if (onlineRes.data) {
+            cachedCandidates.push(...(onlineRes.data as StorePriceDbRow[]).map(mapDbRowToCandidate));
           }
 
           emit({ type: 'cache', candidates: cachedCandidates });
@@ -214,26 +215,31 @@ export default {
 
           const failedChainsSet = new Set<string>();
           const upsertBuffer = new Map<string, Record<string, unknown>>();
+          const pendingUpserts: Array<Promise<void>> = [];
           const tasks: Array<() => Promise<void>> = [];
           const deadlineMs = Date.now() + 8500;
 
-          const flushUpsertBuffer = async () => {
+          const enqueueUpsertFlush = () => {
             if (!hasRealCep || upsertBuffer.size === 0) return;
             const batch = Array.from(upsertBuffer.values());
             upsertBuffer.clear();
-            for (let i = 0; i < batch.length; i += 80) {
-              const chunk = batch.slice(i, i + 80);
-              const { error: upsertErr } = await admin.rpc('upsert_online_prices', {
-                p_rows: chunk,
-              });
-              if (upsertErr) {
-                console.warn('[PegaLa:Quotes] Falha ao gravar cache online em lote', upsertErr.message);
+            const job = (async () => {
+              for (let i = 0; i < batch.length; i += 80) {
+                const chunk = batch.slice(i, i + 80);
+                const { error: upsertErr } = await admin.rpc('upsert_online_prices', {
+                  p_rows: chunk,
+                });
+                if (upsertErr) {
+                  console.warn('[PegaLa:Quotes] Falha ao gravar cache online em lote', upsertErr.message);
+                }
               }
-            }
+            })();
+            pendingUpserts.push(job);
           };
 
-          for (const adapter of adapters) {
-            for (const term of uniqueTerms) {
+          // Fila round-robin por termo entre as redes para distribuir carga e antecipar o comparativo multi-rede
+          for (const term of uniqueTerms) {
+            for (const adapter of adapters) {
               if (cachedPairs.has(`${adapter.slug}:${term}`)) continue;
 
               tasks.push(async () => {
@@ -272,7 +278,7 @@ export default {
                       });
                     }
                     if (upsertBuffer.size >= 60) {
-                      await flushUpsertBuffer();
+                      enqueueUpsertFlush();
                     }
                   }
                 } catch {
@@ -283,7 +289,10 @@ export default {
           }
 
           await runWithConcurrency(tasks, 6);
-          await flushUpsertBuffer();
+          enqueueUpsertFlush();
+          if (pendingUpserts.length > 0) {
+            await Promise.allSettled(pendingUpserts);
+          }
 
           emit({ type: 'done', failedChains: Array.from(failedChainsSet) });
         } catch {

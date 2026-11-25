@@ -8,17 +8,20 @@ import { usePriceComparison } from '../usePriceComparison';
 
 const mockRpc = vi.fn();
 
+const mockPriceSupabaseClient = vi.hoisted(() => ({
+  auth: {
+    getSession: vi.fn().mockResolvedValue({
+      data: { session: { access_token: 'mock-jwt' } },
+    }),
+  },
+  rpc: (...args: unknown[]) => mockRpc(...args),
+}));
+
 vi.mock('../../lib/supabase', () => ({
   isSupabaseConfigured: true,
   ensureSupabaseSession: vi.fn().mockResolvedValue({ id: 'user-1', is_anonymous: true }),
-  supabase: {
-    auth: {
-      getSession: vi.fn().mockResolvedValue({
-        data: { session: { access_token: 'mock-jwt' } },
-      }),
-    },
-    rpc: (...args: unknown[]) => mockRpc(...args),
-  },
+  getSupabaseClient: vi.fn(async () => mockPriceSupabaseClient),
+  supabase: mockPriceSupabaseClient,
 }));
 
 const sampleItem: ShoppingItem = {

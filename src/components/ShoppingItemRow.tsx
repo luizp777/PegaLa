@@ -1,7 +1,7 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useRef } from 'react';
 import { Check, Minus, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { ShoppingItem } from '../types';
-import { CATEGORY_MAP } from '../lib/dictionaryPtBr';
+import { CATEGORY_MAP } from '../lib/categories';
 import { formatQuantity } from '../lib/itemParser';
 import { hapticLight, hapticSuccess, hapticWarning } from '../lib/haptics';
 import { isAtMinQuantity } from '../db/localDb';
@@ -48,8 +48,10 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
   onOpenCategoryPicker,
   onDelete,
 }: ShoppingItemRowProps) {
-  const [offsetX, setOffsetX] = useState(0);
-  const [isSwiping, setIsSwiping] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const bgRef = useRef<HTMLDivElement>(null);
+  const rightActionRef = useRef<HTMLDivElement>(null);
+  const leftActionRef = useRef<HTMLDivElement>(null);
 
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const swipeLockedRef = useRef<'horizontal' | 'vertical' | null>(null);
@@ -57,6 +59,38 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
   const thresholdHitRef = useRef(false);
   const offsetXRef = useRef(0);
   const isSwipingRef = useRef(false);
+
+  const applySwipeStyles = (clamped: number, swiping: boolean) => {
+    const rowEl = rowRef.current;
+    if (rowEl) {
+      rowEl.style.transition = swiping ? 'none' : 'transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+      rowEl.style.transform = clamped === 0 ? '' : `translateX(${clamped}px)`;
+    }
+
+    const showRight = clamped > 10;
+    const showLeft = clamped < -10;
+    const bgEl = bgRef.current;
+    if (bgEl) {
+      bgEl.classList.toggle('bg-emerald-500', showRight);
+      bgEl.classList.toggle('bg-red-500', showLeft);
+      bgEl.classList.toggle('text-white', showRight || showLeft);
+      bgEl.classList.toggle('bg-transparent', !showRight && !showLeft);
+    }
+
+    const rightEl = rightActionRef.current;
+    if (rightEl) {
+      rightEl.classList.toggle('opacity-100', showRight);
+      rightEl.classList.toggle('opacity-0', !showRight);
+      rightEl.classList.toggle('scale-110', clamped >= SWIPE_THRESHOLD);
+    }
+
+    const leftEl = leftActionRef.current;
+    if (leftEl) {
+      leftEl.classList.toggle('opacity-100', showLeft);
+      leftEl.classList.toggle('opacity-0', !showLeft);
+      leftEl.classList.toggle('scale-110', clamped <= -SWIPE_THRESHOLD);
+    }
+  };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0];
@@ -85,7 +119,6 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
     if (swipeLockedRef.current === 'horizontal') {
       suppressClickRef.current = true;
       isSwipingRef.current = true;
-      setIsSwiping(true);
       const clamped = Math.max(-MAX_SWIPE, Math.min(MAX_SWIPE, dx));
       const crossed = Math.abs(clamped) >= SWIPE_THRESHOLD;
       if (crossed && !thresholdHitRef.current) {
@@ -95,15 +128,14 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
         thresholdHitRef.current = false;
       }
       offsetXRef.current = clamped;
-      setOffsetX(clamped);
+      applySwipeStyles(clamped, true);
     }
   };
 
   const resetSwipeGesture = (clearClickImmediately: boolean) => {
     offsetXRef.current = 0;
     isSwipingRef.current = false;
-    setOffsetX(0);
-    setIsSwiping(false);
+    applySwipeStyles(0, false);
     touchStartRef.current = null;
     swipeLockedRef.current = null;
     thresholdHitRef.current = false;
@@ -133,30 +165,21 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
     resetSwipeGesture(true);
   };
 
-  const showRightAction = offsetX > 10;
-  const showLeftAction = offsetX < -10;
-  const rightArmed = offsetX >= SWIPE_THRESHOLD;
-  const leftArmed = offsetX <= -SWIPE_THRESHOLD;
   const atMin = isAtMinQuantity(item);
 
   return (
-    <div className="relative overflow-hidden border-b border-zinc-100 last:border-b-0 dark:border-zinc-800/70">
+    <div className="cv-row relative overflow-hidden border-b border-zinc-100 last:border-b-0 dark:border-zinc-800/70">
       {/* Swipe Reveal Backgrounds */}
       <div
-        className={`pointer-events-none absolute inset-0 flex items-center justify-between px-5 transition-colors ${
-          showRightAction
-            ? 'bg-emerald-500 text-white'
-            : showLeftAction
-              ? 'bg-red-500 text-white'
-              : 'bg-transparent'
-        }`}
+        ref={bgRef}
+        className="pointer-events-none absolute inset-0 flex items-center justify-between bg-transparent px-5 transition-colors"
         aria-hidden="true"
       >
-        <div className={`flex items-center gap-1.5 text-xs font-bold transition-transform ${rightArmed ? 'scale-110' : ''} ${showRightAction ? 'opacity-100' : 'opacity-0'}`}>
+        <div ref={rightActionRef} className="flex items-center gap-1.5 text-xs font-bold opacity-0 transition-transform">
           <Check className="h-5 w-5 stroke-[2.5]" />
           <span>{item.isChecked ? 'Voltar' : 'No carrinho'}</span>
         </div>
-        <div className={`flex items-center gap-1.5 text-xs font-bold transition-transform ${leftArmed ? 'scale-110' : ''} ${showLeftAction ? 'opacity-100' : 'opacity-0'}`}>
+        <div ref={leftActionRef} className="flex items-center gap-1.5 text-xs font-bold opacity-0 transition-transform">
           <span>Excluir</span>
           <Trash2 className="h-5 w-5" />
         </div>
@@ -164,6 +187,7 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
 
       {/* Foreground Row */}
       <div
+        ref={rowRef}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -174,10 +198,6 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
             e.preventDefault();
             suppressClickRef.current = false;
           }
-        }}
-        style={{
-          transform: `translateX(${offsetX}px)`,
-          transition: isSwiping ? 'none' : 'transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1)',
         }}
         className={`group relative flex min-h-[58px] touch-pan-y items-center gap-1.5 px-2.5 py-1.5 ${
           item.isChecked
@@ -190,7 +210,7 @@ export const ShoppingItemRow = memo(function ShoppingItemRow({
           type="button"
           aria-pressed={item.isChecked}
           onClick={() => {
-            if (isSwiping) return;
+            if (isSwipingRef.current) return;
             hapticSuccess();
             onToggle(item);
           }}

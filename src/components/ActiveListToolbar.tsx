@@ -1,4 +1,5 @@
-import { ChevronsDownUp, ChevronsUpDown, Scale, Search, X } from 'lucide-react';
+import { memo } from 'react';
+import { ChevronsDownUp, ChevronsUpDown, ClipboardCopy, Scale, Search, X } from 'lucide-react';
 import type { CategoryDefinition, CategoryId } from '../types';
 import { CategoryIcon } from './ItemIcon';
 
@@ -26,6 +27,8 @@ interface ActiveListToolbarProps {
   canComparePrices?: boolean;
   /** Abre o comparador de preços em mercados e farmácias próximos. */
   onOpenPriceComparison?: () => void;
+  /** Copia os itens pendentes formatados por corredor para colar no WhatsApp. */
+  onCopyListText?: () => void;
 }
 
 /**
@@ -36,7 +39,7 @@ interface ActiveListToolbarProps {
  * @param props - Propriedades da barra de filtragem da lista ativa.
  * @returns Barra renderizada ou `null` quando a lista é curta e possui apenas 1 corredor.
  */
-export function ActiveListToolbar({
+export const ActiveListToolbar = memo(function ActiveListToolbar({
   pendingCount,
   categories,
   searchQuery,
@@ -47,6 +50,7 @@ export function ActiveListToolbar({
   onToggleAllCollapsed,
   canComparePrices = false,
   onOpenPriceComparison,
+  onCopyListText,
 }: ActiveListToolbarProps) {
   const showSearch = pendingCount >= 8 || searchQuery.length > 0;
   const showCategoryPills = categories.length >= 2;
@@ -169,6 +173,18 @@ export function ActiveListToolbar({
             })}
           </div>
 
+          {onCopyListText && pendingCount > 0 && (
+            <button
+              type="button"
+              onClick={onCopyListText}
+              title="Copiar lista por corredores (WhatsApp)"
+              aria-label="Copiar lista por corredores"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-zinc-500 ring-1 ring-zinc-200/80 transition hover:bg-zinc-100 active:scale-95 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-800"
+            >
+              <ClipboardCopy className="h-3.5 w-3.5" />
+            </button>
+          )}
+
           {selectedCategory === 'all' && !searchQuery && (
             <button
               type="button"
@@ -188,4 +204,4 @@ export function ActiveListToolbar({
       )}
     </div>
   );
-}
+});

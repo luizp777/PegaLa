@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import {
   ChevronDown,
   Lock,
@@ -40,6 +40,10 @@ interface HeaderProps {
   onDeleteList: (id: string) => void;
   /** Callback acionado para sair de uma lista compartilhada como convidado pelo seu ID. */
   onLeaveList: (id: string) => void;
+  /** Callback acionado para duplicar uma lista existente como nova lista local. */
+  onDuplicateList?: (id: string) => void;
+  /** Abre o modal de Dados e Backup Local. */
+  onOpenDataBackup?: () => void;
   /** Abre o modal de compartilhamento e convites. */
   onOpenShare: () => void;
   /** Indica se o tema escuro está ativo. */
@@ -75,7 +79,7 @@ interface HeaderProps {
  * @param props - Propriedades de controle do cabeçalho.
  * @returns Elemento `<header>` renderizado.
  */
-export function Header({
+export const Header = memo(function Header({
   lists,
   activeList,
   pendingCount,
@@ -85,6 +89,8 @@ export function Header({
   onOpenCreateList,
   onDeleteList,
   onLeaveList,
+  onDuplicateList,
+  onOpenDataBackup,
   onOpenShare,
   isDark,
   onToggleTheme,
@@ -229,6 +235,8 @@ export function Header({
               onOpenCreateList={onOpenCreateList}
               onDeleteList={onDeleteList}
               onLeaveList={onLeaveList}
+              onDuplicateList={onDuplicateList}
+              onOpenDataBackup={onOpenDataBackup}
               onCopyDiagnostics={onCopyDiagnostics}
               onClose={() => setMenuOpen(false)}
             />
@@ -302,4 +310,4 @@ export function Header({
       )}
     </header>
   );
-}
+});

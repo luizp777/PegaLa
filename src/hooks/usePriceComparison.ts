@@ -15,7 +15,7 @@ import {
   savePriceComparisonCache,
 } from '../db/localDb';
 import { computePriceComparison, type PriceComparisonResult } from '../lib/priceEngine';
-import { ensureSupabaseSession, supabase } from '../lib/supabase';
+import { ensureSupabaseSession, getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
 import type { ListType, ShoppingItem } from '../types';
 
 const LOCATION_STORAGE_KEY = 'pegala_price_location';
@@ -198,8 +198,9 @@ export function usePriceComparison(params: {
 
       try {
         await ensureSupabaseSession();
-        const token = supabase
-          ? (await supabase.auth.getSession()).data.session?.access_token
+        const client = await getSupabaseClient();
+        const token = client
+          ? (await client.auth.getSession()).data.session?.access_token
           : undefined;
         if (!token) {
           throw new Error('Conecte-se à internet para autenticar e comparar preços.');
@@ -293,9 +294,28 @@ export function usePriceComparison(params: {
         const reader = quotesRes.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let accumulated: PriceQuoteCandidate[] = [];
+        const accumulated: PriceQuoteCandidate[] = [];
         let latestFailed: string[] = [];
         const chainsSeen = new Set<string>();
+        let dirtyCandidates = false;
+        let dirtyProgress = false;
+        let lastFlushAt = 0;
+
+        const flushStreamState = (force = false) => {
+          const now = Date.now();
+          if (!force && now - lastFlushAt < 120) return;
+          if (dirtyCandidates) {
+            const snapshot = [...accumulated];
+            candidatesRef.current = snapshot;
+            setCandidates(snapshot);
+            dirtyCandidates = false;
+          }
+          if (dirtyProgress) {
+            setStreamProgress({ done: chainsSeen.size, total: Math.max(1, chains.length) });
+            dirtyProgress = false;
+          }
+          lastFlushAt = now;
+        };
 
         const processLine = (rawLine: string) => {
           const trimmed = rawLine.trim();
@@ -303,20 +323,21 @@ export function usePriceComparison(params: {
           try {
             const event = JSON.parse(trimmed) as QuotesStreamEvent;
             if (event.type === 'cache') {
-              accumulated = [...event.candidates];
-              candidatesRef.current = accumulated;
-              setCandidates(accumulated);
+              accumulated.length = 0;
+              accumulated.push(...event.candidates);
+              dirtyCandidates = true;
+              flushStreamState(true);
             } else if (event.type === 'chain') {
               chainsSeen.add(event.chainSlug);
-              setStreamProgress({ done: chainsSeen.size, total: Math.max(1, chains.length) });
+              dirtyProgress = true;
               if (event.candidates.length > 0) {
-                accumulated = [...accumulated, ...event.candidates];
-                candidatesRef.current = accumulated;
-                setCandidates(accumulated);
+                accumulated.push(...event.candidates);
+                dirtyCandidates = true;
               }
             } else if (event.type === 'done') {
               latestFailed = event.failedChains;
               setFailedChains(latestFailed);
+              flushStreamState(true);
             }
           } catch {
             // Ignora linha NDJSON malformada sem interromper o stream
@@ -332,10 +353,12 @@ export function usePriceComparison(params: {
           for (const line of lines) {
             processLine(line);
           }
+          flushStreamState(false);
         }
         if (buffer.trim()) {
           processLine(buffer);
         }
+        flushStreamState(true);
 
         const nowIso = new Date().toISOString();
         setCachedAt(nowIso);
@@ -489,7 +512,7 @@ export function usePriceComparison(params: {
       packQuantity?: number;
       packUnit?: string;
     }): Promise<{ ok: boolean; error?: string }> => {
-      if (!supabase) {
+      if (!isSupabaseConfigured) {
         return { ok: false, error: 'Supabase não configurado.' };
       }
       if (!isPersistedStoreId(input.storeId)) {
@@ -497,10 +520,14 @@ export function usePriceComparison(params: {
       }
 
       await ensureSupabaseSession();
+      const client = await getSupabaseClient();
+      if (!client) {
+        return { ok: false, error: 'Supabase não configurado.' };
+      }
       const title = input.productTitle?.trim() || input.item.name;
       const packQty = input.packQuantity && input.packQuantity > 0 ? input.packQuantity : 1;
       const packUnit = input.packUnit?.trim() || input.item.unit || 'un';
-      const { data, error: rpcError } = await supabase.rpc('report_community_price', {
+      const { data, error: rpcError } = await client.rpc('report_community_price', {
         p_store_id: input.storeId,
         p_normalized_term: input.item.normalizedName,
         p_product_title: title,

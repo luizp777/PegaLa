@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, ensureDefaultLists, setLastActiveListId } from '../db/localDb';
-import { flushPendingSync, joinSharedListByCode, subscribeToListRealtime } from '../db/syncEngine';
-import { CATEGORIES } from '../lib/dictionaryPtBr';
+import { db, ensureDefaultLists, getLastActiveListId, setLastActiveListId } from '../db/localDb';
+import { CATEGORIES } from '../lib/categories';
 import type { CategoryId, ShoppingItem } from '../types';
+
+const ptBrCollator = new Intl.Collator('pt-BR', { sensitivity: 'base' });
+const loadSyncEngine = () => import('../db/syncEngine');
 
 /**
  * Hook principal de estado reativo da lista ativa, itens agrupados por corredor,
@@ -15,7 +17,12 @@ import type { CategoryId, ShoppingItem } from '../types';
  * @returns Listas disponíveis, lista ativa, itens agrupados, itens no carrinho, sugestões frequentes e controles de seleção.
  */
 export function useActiveList() {
-  const [activeListId, setActiveListIdState] = useState<string | null>(null);
+  const [activeListId, setActiveListIdState] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('join') || params.get('list')) return null;
+    return getLastActiveListId();
+  });
   const [hasInitialized, setHasInitialized] = useState(false);
   const [isJoiningSharedList, setIsJoiningSharedList] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -34,6 +41,7 @@ export function useActiveList() {
 
       if (joinCode) {
         if (mounted) setIsJoiningSharedList(true);
+        const { joinSharedListByCode } = await loadSyncEngine();
         const res = await joinSharedListByCode(joinCode);
         if (!mounted) return;
 
@@ -92,7 +100,7 @@ export function useActiveList() {
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      void flushPendingSync();
+      void loadSyncEngine().then(({ flushPendingSync }) => flushPendingSync());
     };
     const handleOffline = () => setIsOnline(false);
 
@@ -137,8 +145,19 @@ export function useActiveList() {
 
   useEffect(() => {
     if (!activeList?.id) return;
-    const unsubscribe = subscribeToListRealtime(activeList.id);
-    return unsubscribe;
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    const listId = activeList.id;
+
+    void loadSyncEngine().then(({ subscribeToListRealtime }) => {
+      if (cancelled) return;
+      unsubscribe = subscribeToListRealtime(listId);
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [activeList?.id]);
 
   const itemsQuery = useLiveQuery(
@@ -156,17 +175,20 @@ export function useActiveList() {
   useEffect(() => {
     if (pendingSyncCount > 0 && isOnline) {
       const t = setTimeout(() => {
-        void flushPendingSync();
+        void loadSyncEngine().then(({ flushPendingSync }) => flushPendingSync());
       }, 300);
       return () => clearTimeout(t);
     }
   }, [pendingSyncCount, isOnline]);
 
-  const frequentSuggestions =
-    useLiveQuery(async () => {
-      const top = await db.dictionary.orderBy('usageCount').reverse().limit(18).toArray();
-      return top;
-    }, []) ?? [];
+  const frequentSuggestionsQuery = useLiveQuery(async () => {
+    const top = await db.dictionary.orderBy('usageCount').reverse().limit(18).toArray();
+    return top;
+  }, []);
+  const frequentSuggestions = useMemo(
+    () => frequentSuggestionsQuery ?? [],
+    [frequentSuggestionsQuery]
+  );
 
   const { groupedPending, checkedItems } = useMemo(() => {
     const pending: ShoppingItem[] = [];
@@ -188,7 +210,7 @@ export function useActiveList() {
 
     const groups = CATEGORIES.filter((c) => byCat.has(c.id)).map((category) => ({
       category,
-      items: (byCat.get(category.id) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+      items: (byCat.get(category.id) ?? []).sort((a, b) => ptBrCollator.compare(a.name, b.name)),
     }));
 
     return { groupedPending: groups, checkedItems: checked };

@@ -6,7 +6,7 @@ import type {
   PriceSource,
 } from '../../shared/priceTypes';
 import type { CategoryId, ShoppingItem } from '../types';
-import { normalizeText } from './dictionaryPtBr';
+import { normalizeText } from './categories';
 
 export { parsePackFromTitle, type ParsedPack };
 
