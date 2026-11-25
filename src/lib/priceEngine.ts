@@ -66,7 +66,11 @@ export interface PriceComparisonResult {
   totalItems: number;
 }
 
-const NEGATIVE_GUARD_RULES: Array<{ trigger: string; forbidden: string[] }> = [
+const NEGATIVE_GUARD_RULES: Array<{
+  trigger: string;
+  forbidden: string[];
+  unlessTermContains?: string[];
+}> = [
   {
     trigger: 'leite',
     forbidden: [
@@ -102,6 +106,104 @@ const NEGATIVE_GUARD_RULES: Array<{ trigger: string; forbidden: string[] }> = [
   {
     trigger: 'pao',
     forbidden: ['queijo', 'farinha de', 'ralado'],
+  },
+  {
+    trigger: 'cebola',
+    unlessTermContains: ['salgadinho', 'snack', 'chips', 'biscoito', 'bolacha', 'tempero', 'molho', 'sopa', 'creme', 'pate'],
+    forbidden: [
+      'salgadinho',
+      'snack',
+      'cebolitos',
+      'torcida',
+      'doritos',
+      'cheetos',
+      'ruffles',
+      'chips',
+      'batata palha',
+      'crispy',
+      'aneis',
+      'empanado',
+      'tempero',
+      'caldo',
+      'sopa',
+      'creme',
+      'molho',
+      'pate',
+      'desidratado',
+      'desidratada',
+      'em po',
+      'biscoito',
+      'bolacha',
+    ],
+  },
+  {
+    trigger: 'alho',
+    unlessTermContains: ['salgadinho', 'snack', 'biscoito', 'bolacha', 'pao', 'molho', 'pate', 'tempero', 'pasta'],
+    forbidden: [
+      'salgadinho',
+      'snack',
+      'torcida',
+      'biscoito',
+      'bolacha',
+      'pao de alho',
+      'molho',
+      'pate',
+      'tempero',
+      'em po',
+      'desidratado',
+      'pasta',
+    ],
+  },
+  {
+    trigger: 'batata',
+    unlessTermContains: ['salgadinho', 'snack', 'chips', 'palha', 'congelada', 'frita', 'sopa', 'pure'],
+    forbidden: [
+      'salgadinho',
+      'snack',
+      'ruffles',
+      'pringles',
+      'lays',
+      'chips',
+      'palha',
+      'congelada',
+      'frita',
+      'sopa',
+      'pure',
+      'em po',
+    ],
+  },
+  {
+    trigger: 'tomate',
+    unlessTermContains: ['extrato', 'molho', 'polpa', 'passata', 'pelado', 'ketchup', 'catchup', 'salgadinho', 'snack', 'sopa', 'seco'],
+    forbidden: [
+      'extrato',
+      'molho',
+      'polpa',
+      'passata',
+      'pelado',
+      'ketchup',
+      'catchup',
+      'salgadinho',
+      'snack',
+      'sopa',
+      'seco',
+    ],
+  },
+  {
+    trigger: 'milho',
+    unlessTermContains: ['salgadinho', 'snack', 'pipoca', 'farinha', 'fuba', 'amido', 'oleo'],
+    forbidden: [
+      'salgadinho',
+      'snack',
+      'pipoca',
+      'fandangos',
+      'cheetos',
+      'doritos',
+      'farinha',
+      'fuba',
+      'amido',
+      'oleo',
+    ],
   },
 ];
 
@@ -140,6 +242,47 @@ const CATEGORY_FORBIDDEN_TOKENS: Partial<Record<CategoryId, string[]>> = {
     'caldo',
     'tempero',
     'chips',
+    'salgadinho',
+    'snack',
+    'cebolitos',
+    'torcida',
+    'doritos',
+    'cheetos',
+    'ruffles',
+    'fandangos',
+    'pringles',
+    'lays',
+    'elma',
+    'batata palha',
+    'palha',
+    'crispy',
+    'aneis',
+    'empanado',
+    'congelado',
+    'congelada',
+    'desidratado',
+    'desidratada',
+    'conserva',
+    'picles',
+    'pate',
+    'creme',
+    'sopa',
+    'macarrao',
+    'miojo',
+    'pipoca',
+    'amendoim',
+    'queijo',
+    'requeijao',
+    'manteiga',
+    'lata',
+    'pure',
+    'passata',
+    'pelado',
+    'farinha',
+    'amido',
+    'oleo',
+    'vinagre',
+    'azeite',
   ],
   acougue: [
     'caldo',
@@ -147,11 +290,154 @@ const CATEGORY_FORBIDDEN_TOKENS: Partial<Record<CategoryId, string[]>> = {
     'miojo',
     'macarrao',
     'salgadinho',
+    'snack',
+    'sopa',
+    'batata',
+    'biscoito',
+    'bolacha',
     'sabor',
     'racao',
     'petisco',
   ],
+  laticinios: [
+    'biscoito',
+    'bolacha',
+    'salgadinho',
+    'snack',
+    'sorvete',
+    'gelato',
+    'chocolate',
+    'bala',
+    'chiclete',
+    'sabonete',
+    'shampoo',
+    'condicionador',
+    'hidratante',
+    'locao',
+  ],
+  padaria: ['sabonete', 'shampoo', 'detergente', 'racao', 'petisco', 'salgadinho', 'snack'],
+  bebidas: [
+    'sabonete',
+    'shampoo',
+    'condicionador',
+    'detergente',
+    'desinfetante',
+    'amaciante',
+    'bala',
+    'chiclete',
+    'biscoito',
+    'bolacha',
+  ],
+  limpeza: ['biscoito', 'bolacha', 'salgadinho', 'snack', 'suco', 'refrigerante', 'iogurte', 'queijo'],
+  higiene: [
+    'biscoito',
+    'bolacha',
+    'salgadinho',
+    'snack',
+    'suco',
+    'refrigerante',
+    'iogurte',
+    'queijo',
+    'racao',
+  ],
+  medicamentos: ['biscoito', 'bolacha', 'salgadinho', 'snack', 'refrigerante', 'suco', 'racao', 'sabonete'],
+  pet: ['salgadinho', 'refrigerante', 'suco'],
 };
+
+const RETAIL_CATEGORY_KEYWORDS: Partial<Record<CategoryId, string[]>> = {
+  hortifruti: [
+    'hortifruti',
+    'horti',
+    'fruta',
+    'frutas',
+    'legume',
+    'legumes',
+    'verdura',
+    'verduras',
+    'feira',
+    'flv',
+    'organico',
+    'organicos',
+  ],
+  padaria: ['padaria', 'panificacao', 'pao', 'paes', 'matinais', 'confeitaria'],
+  laticinios: ['laticinio', 'laticinios', 'frios', 'queijo', 'queijos', 'iogurte', 'iogurtes', 'leite', 'leites'],
+  acougue: ['acougue', 'carne', 'carnes', 'ave', 'aves', 'suino', 'suinos', 'peixaria', 'pescado', 'pescados', 'bovino', 'bovinos'],
+  mercearia: [
+    'mercearia',
+    'salgadinho',
+    'salgadinhos',
+    'snack',
+    'snacks',
+    'biscoito',
+    'biscoitos',
+    'massa',
+    'massas',
+    'grao',
+    'graos',
+    'tempero',
+    'temperos',
+    'bomboniere',
+  ],
+  congelados: ['congelado', 'congelados', 'sorvete', 'sorvetes', 'pratos prontos'],
+  bebidas: ['bebida', 'bebidas', 'cerveja', 'cervejas', 'vinho', 'vinhos', 'refrigerante', 'refrigerantes', 'suco', 'sucos', 'agua', 'aguas'],
+  limpeza: ['limpeza', 'lavanderia'],
+  utilidades: ['utilidades', 'bazar', 'casa', 'descartaveis'],
+  higiene: ['higiene', 'perfumaria', 'banho', 'cuidados pessoais'],
+  dermocosmeticos: ['dermocosmetico', 'dermocosmeticos', 'beleza', 'maquiagem', 'skincare'],
+  medicamentos: ['medicamento', 'medicamentos', 'farmacia', 'saude', 'remedio', 'remedios'],
+  primeiros_socorros: ['primeiros socorros', 'curativo', 'curativos'],
+  bebe: ['bebe', 'infantil', 'fralda', 'fraldas'],
+  pet: ['pet', 'cao', 'caes', 'gato', 'gatos', 'animais'],
+};
+
+const COMPATIBLE_CATEGORY_GROUPS: Partial<Record<CategoryId, CategoryId[]>> = {
+  mercearia: ['padaria', 'congelados'],
+  padaria: ['mercearia', 'laticinios'],
+  laticinios: ['padaria', 'bebidas'],
+  higiene: ['dermocosmeticos', 'bebe'],
+  dermocosmeticos: ['higiene'],
+  medicamentos: ['primeiros_socorros'],
+  primeiros_socorros: ['medicamentos'],
+};
+
+type RetailCategoryMatch = 'match' | 'conflict' | 'neutral';
+
+/**
+ * Avalia se o departamento/categoria informado pelo varejista é compatível com a categoria do item na lista.
+ *
+ * @param retailCategory - Caminho ou nome do departamento retornado pela loja (ex.: `/Hortifruti/Legumes/`).
+ * @param categoryId - Categoria do item na lista de compras.
+ * @returns `'match'` quando confirma a categoria, `'conflict'` quando pertence a departamento incompatível, ou `'neutral'`.
+ */
+export function checkRetailCategoryCompatibility(
+  retailCategory: string | null | undefined,
+  categoryId?: CategoryId
+): RetailCategoryMatch {
+  if (!retailCategory || !categoryId || categoryId === 'outros') return 'neutral';
+  const normCat = normalizeText(retailCategory);
+  if (!normCat) return 'neutral';
+
+  const ownKeywords = RETAIL_CATEGORY_KEYWORDS[categoryId];
+  if (ownKeywords?.some((kw) => containsForbiddenTerm(normCat, kw))) {
+    return 'match';
+  }
+
+  const compatibleSet = new Set<CategoryId>([
+    categoryId,
+    ...(COMPATIBLE_CATEGORY_GROUPS[categoryId] ?? []),
+  ]);
+
+  for (const [otherCat, keywords] of Object.entries(RETAIL_CATEGORY_KEYWORDS) as Array<
+    [CategoryId, string[]]
+  >) {
+    if (compatibleSet.has(otherCat)) continue;
+    if (keywords.some((kw) => containsForbiddenTerm(normCat, kw))) {
+      return 'conflict';
+    }
+  }
+
+  return 'neutral';
+}
 
 const STOP_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'para', 'e', 'em', 'c']);
 
@@ -239,16 +525,22 @@ function tokenize(text: string): string[] {
  * @param normalizedTerm - Termo normalizado da lista.
  * @param productTitle - Título do produto retornado pela loja.
  * @param categoryId - Categoria opcional do item para evitar falsos positivos (ex.: refresco em pó para fruta).
+ * @param retailCategory - Departamento/categoria opcional retornado pelo varejista.
  * @returns Score de 0 a 1 (valores `< 0.45` devem ser descartados).
  */
 export function scoreCandidateMatch(
   normalizedTerm: string,
   productTitle: string,
-  categoryId?: CategoryId
+  categoryId?: CategoryId,
+  retailCategory?: string | null
 ): number {
   const normTerm = normalizeText(normalizedTerm);
   const normTitle = normalizeText(productTitle);
   if (!normTerm || !normTitle) return 0;
+
+  if (checkRetailCategoryCompatibility(retailCategory, categoryId) === 'conflict') {
+    return 0;
+  }
 
   if (categoryId) {
     const catForbidden = CATEGORY_FORBIDDEN_TOKENS[categoryId];
@@ -263,6 +555,9 @@ export function scoreCandidateMatch(
 
   for (const rule of NEGATIVE_GUARD_RULES) {
     if (containsForbiddenTerm(normTerm, rule.trigger)) {
+      if (rule.unlessTermContains?.some((exempt) => containsForbiddenTerm(normTerm, exempt))) {
+        continue;
+      }
       for (const bad of rule.forbidden) {
         if (!containsForbiddenTerm(normTerm, bad) && containsForbiddenTerm(normTitle, bad)) {
           return 0;
@@ -355,9 +650,20 @@ function selectCandidatesForStore(
 
   if (pool.length === 0) return null;
 
+  const normTerm = normalizeText(item.normalizedName);
+  const itemBase = toBaseUnit(item.quantity, item.unit);
+  const expectsLargePack =
+    (item.categoryId === 'hortifruti' || itemBase.family === 'mass') &&
+    (itemBase.family !== 'mass' || itemBase.value >= 250);
+
   const scored = pool
     .map((candidate) => {
       const isCommunity = candidate.source !== 'online';
+      const retailMatch: RetailCategoryMatch = isCommunity
+        ? 'match'
+        : checkRetailCategoryCompatibility(candidate.retailCategory, item.categoryId);
+      if (retailMatch === 'conflict') return null;
+
       const score = isCommunity
         ? 1.0
         : scoreCandidateMatch(item.normalizedName, candidate.productTitle, item.categoryId);
@@ -382,12 +688,26 @@ function selectCandidatesForStore(
             (preferred.ean && candidate.ean === preferred.ean))
       );
 
+      const categoryTier = retailMatch === 'match' ? 2 : 1;
+
+      const normTitle = normalizeText(candidate.productTitle);
+      const titleTier =
+        normTitle.startsWith(normTerm) || score >= 0.9 ? 2 : score >= 0.7 ? 1 : 0;
+
+      const packBase = toBaseUnit(parsedPack.quantity, parsedPack.unit);
+      const isTinyPack =
+        expectsLargePack && packBase.family === 'mass' && packBase.value <= 120;
+      const packTier = isTinyPack ? 0 : 1;
+
       return {
         candidate,
         packsNeeded,
         effectiveTotalCents,
         isApproximateUnit,
         isPreferred,
+        categoryTier,
+        packTier,
+        titleTier,
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -396,6 +716,9 @@ function selectCandidatesForStore(
 
   scored.sort((a, b) => {
     if (a.isPreferred !== b.isPreferred) return a.isPreferred ? -1 : 1;
+    if (a.categoryTier !== b.categoryTier) return b.categoryTier - a.categoryTier;
+    if (a.packTier !== b.packTier) return b.packTier - a.packTier;
+    if (a.titleTier !== b.titleTier) return b.titleTier - a.titleTier;
     return a.effectiveTotalCents - b.effectiveTotalCents;
   });
 
@@ -403,7 +726,7 @@ function selectCandidatesForStore(
   return {
     item,
     candidate: best.candidate,
-    alternatives: scored.slice(0, 5).map((s) => s.candidate),
+    alternatives: scored.slice(0, 8).map((s) => s.candidate),
     packsNeeded: best.packsNeeded,
     effectiveTotalCents: best.effectiveTotalCents,
     isApproximateUnit: best.isApproximateUnit,

@@ -14,6 +14,7 @@ describe('Contract parsers dos adaptadores de varejo', () => {
         productId: '100',
         productName: 'Carne Moída de Patinho Swift 1kg',
         brand: 'Swift',
+        categories: ['/Açougue/Bovinos/'],
         items: [
           {
             ean: '7891234567890',
@@ -37,6 +38,7 @@ describe('Contract parsers dos adaptadores de varejo', () => {
       packUnit: 'kg',
       brand: 'Swift',
       ean: '7891234567890',
+      retailCategory: '/Açougue/Bovinos/',
     });
   });
 
@@ -52,6 +54,7 @@ describe('Contract parsers dos adaptadores de varejo', () => {
                   'sku.activePrice': ['4.980000'],
                   'product.brand': ['JUSSARA'],
                   'product.repositoryId': ['227250'],
+                  'product.category': ['Laticínios'],
                 },
               },
             ],
@@ -68,6 +71,7 @@ describe('Contract parsers dos adaptadores de varejo', () => {
       packQuantity: 1,
       packUnit: 'L',
       brand: 'JUSSARA',
+      retailCategory: 'Laticínios',
     });
   });
 
@@ -79,6 +83,7 @@ describe('Contract parsers dos adaptadores de varejo', () => {
             {
               name: 'Leite UHT Integral Parmalat 1L',
               sku: '119162',
+              categories: [{ name: 'Mercearia' }, null, { name: 'Leites' }],
               price_range: { minimum_price: { final_price: { value: 5.49 } } },
             },
           ],
@@ -93,6 +98,7 @@ describe('Contract parsers dos adaptadores de varejo', () => {
       priceCents: 549,
       packQuantity: 1,
       packUnit: 'L',
+      retailCategory: 'Mercearia / Leites',
     });
   });
 

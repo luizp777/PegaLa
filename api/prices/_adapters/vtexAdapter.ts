@@ -5,6 +5,7 @@ interface VtexProductResponse {
   productId?: string;
   productName?: string;
   brand?: string;
+  categories?: string[];
   items?: Array<{
     ean?: string;
     sellers?: Array<{
@@ -111,6 +112,10 @@ export function parseVtexProducts(
     if (priceCents < 10 || priceCents > 5000000) continue;
 
     const pack = parsePackServer(title);
+    const retailCategory =
+      Array.isArray(raw.categories)
+        ? raw.categories.find((c): c is string => typeof c === 'string' && c.trim().length > 0)?.trim().slice(0, 240) || null
+        : null;
     results.push({
       storeId: null,
       chainSlug,
@@ -119,6 +124,7 @@ export function parseVtexProducts(
       productTitle: title.slice(0, 240),
       brand: raw.brand?.trim() || null,
       ean: selectedEan?.trim() || null,
+      retailCategory,
       packQuantity: pack.quantity,
       packUnit: pack.unit,
       priceCents,
@@ -147,7 +153,7 @@ export function createVtexAdapter(config: {
         ? `vtex_segment=${Buffer.from(JSON.stringify({ regionId })).toString('base64')}`
         : '';
 
-      const url = `${config.host}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(ctx.term)}&_from=0&_to=7`;
+      const url = `${config.host}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(ctx.term)}&_from=0&_to=19`;
       const res = await fetch(url, {
         headers: {
           'User-Agent': 'PegaLa/1.0',

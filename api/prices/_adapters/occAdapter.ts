@@ -39,6 +39,12 @@ export function parseOccProducts(
 
     const brand = attrs['product.brand']?.[0]?.trim() || null;
     const repoId = attrs['product.repositoryId']?.[0]?.trim();
+    const rawCat =
+      attrs['product.category']?.[0] ??
+      attrs['parentCategory.displayName']?.[0] ??
+      attrs['product.parentCategory.displayName']?.[0] ??
+      attrs['category.displayName']?.[0];
+    const retailCategory = rawCat?.trim().slice(0, 240) || null;
     const pack = parsePackServer(title);
 
     results.push({
@@ -49,6 +55,7 @@ export function parseOccProducts(
       productTitle: title.slice(0, 240),
       brand,
       ean: null,
+      retailCategory,
       packQuantity: pack.quantity,
       packUnit: pack.unit,
       priceCents,
@@ -65,7 +72,7 @@ export const confiancaAdapter: RetailAdapter = {
   displayName: 'Confiança Supermercados',
   storeType: 'mercado',
   async search(ctx: AdapterSearchContext): Promise<PriceQuoteCandidate[]> {
-    const url = `https://www.confianca.com.br/ccstoreui/v1/search?Ntt=${encodeURIComponent(ctx.term)}&Nrpp=8`;
+    const url = `https://www.confianca.com.br/ccstoreui/v1/search?Ntt=${encodeURIComponent(ctx.term)}&Nrpp=20`;
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'PegaLa/1.0',

@@ -31,6 +31,7 @@ interface StorePriceDbRow {
   product_title: string;
   brand: string | null;
   ean: string | null;
+  retail_category: string | null;
   pack_quantity: number;
   pack_unit: string;
   price_cents: number;
@@ -50,6 +51,7 @@ function mapDbRowToCandidate(row: StorePriceDbRow): PriceQuoteCandidate {
     productTitle: row.product_title,
     brand: row.brand,
     ean: row.ean,
+    retailCategory: row.retail_category ?? null,
     packQuantity: Number(row.pack_quantity) || 1,
     packUnit: row.pack_unit || 'un',
     priceCents: row.price_cents,
@@ -165,7 +167,7 @@ export default {
           // 1. Cache-first no Supabase em paralelo (preços da comunidade das lojas + preços online válidos)
           const cachedCandidates: PriceQuoteCandidate[] = [];
           const cacheSelect =
-            'id, store_id, chain_slug, normalized_term, product_key, product_title, brand, ean, pack_quantity, pack_unit, price_cents, source, weight, observed_at, expires_at';
+            'id, store_id, chain_slug, normalized_term, product_key, product_title, brand, ean, retail_category, pack_quantity, pack_unit, price_cents, source, weight, observed_at, expires_at';
 
           const [storeRes, onlineRes] = await Promise.all([
             storeIds.length > 0
@@ -176,7 +178,7 @@ export default {
                   .in('normalized_term', uniqueTerms)
                   .gt('expires_at', nowIso)
                   .order('observed_at', { ascending: false })
-                  .limit(1000)
+                  .limit(1500)
               : Promise.resolve({ data: null, error: null }),
             requestedChains.length > 0 && hasRealCep
               ? admin
@@ -188,7 +190,7 @@ export default {
                   .in('normalized_term', uniqueTerms)
                   .gt('expires_at', nowIso)
                   .order('observed_at', { ascending: false })
-                  .limit(1500)
+                  .limit(3000)
               : Promise.resolve({ data: null, error: null }),
           ]);
 
@@ -269,6 +271,7 @@ export default {
                         product_title: c.productTitle,
                         brand: c.brand ?? null,
                         ean: c.ean ?? null,
+                        retail_category: c.retailCategory ?? null,
                         pack_quantity: c.packQuantity,
                         pack_unit: c.packUnit,
                         price_cents: c.priceCents,

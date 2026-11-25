@@ -7,6 +7,7 @@ interface MagentoGraphqlResponse {
       items?: Array<{
         name?: string;
         sku?: string;
+        categories?: Array<{ name?: string } | null>;
         price_range?: {
           minimum_price?: {
             final_price?: {
@@ -60,6 +61,14 @@ export function parseTausteProducts(
     if (priceCents < 10 || priceCents > 5000000) continue;
 
     const pack = parsePackServer(title);
+    const retailCategory =
+      Array.isArray(item.categories)
+        ? item.categories
+            .map((c) => c?.name?.trim())
+            .filter((n): n is string => Boolean(n))
+            .join(' / ')
+            .slice(0, 240) || null
+        : null;
     results.push({
       storeId: null,
       chainSlug: 'tauste',
@@ -68,6 +77,7 @@ export function parseTausteProducts(
       productTitle: title.slice(0, 240),
       brand: null,
       ean: null,
+      retailCategory,
       packQuantity: pack.quantity,
       packUnit: pack.unit,
       priceCents,
@@ -86,10 +96,13 @@ export const tausteAdapter: RetailAdapter = {
   async search(ctx: AdapterSearchContext): Promise<PriceQuoteCandidate[]> {
     const storePath = resolveTausteStorePath(ctx.city);
     const query = `query SearchProducts($term: String!) {
-      products(search: $term, pageSize: 8) {
+      products(search: $term, pageSize: 20) {
         items {
           name
           sku
+          categories {
+            name
+          }
           price_range {
             minimum_price {
               final_price {

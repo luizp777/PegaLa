@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { NearbyStore, PriceQuoteCandidate } from '../../../shared/priceTypes';
 import type { ShoppingItem } from '../../types';
 import {
+  checkRetailCategoryCompatibility,
   computePacksNeeded,
   computePriceComparison,
   parsePackFromTitle,
@@ -94,6 +95,26 @@ describe('scoreCandidateMatch', () => {
     expect(scoreCandidateMatch('laranja', 'Laranja Pera 1kg', 'hortifruti')).toBeGreaterThan(0.7);
     expect(scoreCandidateMatch('laranja', 'Laranja Pera Embalada 1kg', 'hortifruti')).toBeGreaterThan(0.7);
     expect(scoreCandidateMatch('leite integral', 'Leite Longa Vida Integral Jussara 1L')).toBeGreaterThan(0.7);
+  });
+
+  it('rejeita salgadinho/tempero para cebola de hortifruti mas permite quando o usuário pede salgadinho', () => {
+    expect(scoreCandidateMatch('cebola', 'Salgadinho de Cebola Torcida 60g', 'hortifruti')).toBe(0);
+    expect(scoreCandidateMatch('cebola', 'Salgadinho Elma Chips Cebolitos 55g', 'hortifruti')).toBe(0);
+    expect(scoreCandidateMatch('cebola', 'Tempero Cebola e Salsa 30g', 'hortifruti')).toBe(0);
+    expect(scoreCandidateMatch('cebola', 'Cebola Nacional Kg', 'hortifruti', '/Hortifruti/Legumes/')).toBeGreaterThan(0.7);
+    expect(
+      scoreCandidateMatch('cebola', 'Produto X Cebola', 'hortifruti', '/Mercearia/Salgadinhos/')
+    ).toBe(0);
+    expect(
+      scoreCandidateMatch('salgadinho de cebola', 'Salgadinho de Cebola Torcida 60g', 'mercearia', '/Mercearia/Salgadinhos/')
+    ).toBeGreaterThan(0.7);
+  });
+
+  it('verifica compatibilidade de retailCategory com CategoryId', () => {
+    expect(checkRetailCategoryCompatibility('/Hortifruti/Legumes/', 'hortifruti')).toBe('match');
+    expect(checkRetailCategoryCompatibility('/Mercearia/Iogurte/', 'laticinios')).toBe('match');
+    expect(checkRetailCategoryCompatibility('/Mercearia/Salgadinhos/', 'hortifruti')).toBe('conflict');
+    expect(checkRetailCategoryCompatibility(null, 'hortifruti')).toBe('neutral');
   });
 });
 
@@ -271,5 +292,127 @@ describe('computePriceComparison', () => {
     const res = computePriceComparison({ stores, items, candidates, nowMs: NOW });
     expect(res.rankedStores[0].matchedItems[0].source).toBe('community');
     expect(res.rankedStores[0].matchedItems[0].effectiveTotalCents).toBe(460);
+  });
+
+  it('prioriza aderência de categoria e título sobre preço mais baixo em cebola de hortifruti', () => {
+    const stores = [makeStore({ id: 's1', name: 'Mambo', chainSlug: 'mambo' })];
+    const items = [
+      makeItem({
+        id: 'i1',
+        name: 'Cebola',
+        normalizedName: 'cebola',
+        quantity: 1,
+        unit: 'kg',
+        categoryId: 'hortifruti',
+      }),
+    ];
+    const candidates = [
+      makeCandidate({
+        chainSlug: 'mambo',
+        normalizedTerm: 'cebola',
+        productKey: 'torcida-cebola',
+        productTitle: 'Salgadinho Torcida Cebola 60g',
+        retailCategory: '/Mercearia/Salgadinhos/',
+        packQuantity: 60,
+        packUnit: 'g',
+        priceCents: 249,
+      }),
+      makeCandidate({
+        chainSlug: 'mambo',
+        normalizedTerm: 'cebola',
+        productKey: 'cebola-roxa-sem-cat',
+        productTitle: 'Bandeja Cebola Roxa 500g',
+        retailCategory: null,
+        packQuantity: 500,
+        packUnit: 'g',
+        priceCents: 499,
+      }),
+      makeCandidate({
+        chainSlug: 'mambo',
+        normalizedTerm: 'cebola',
+        productKey: 'cebola-nacional',
+        productTitle: 'Cebola Nacional Kg',
+        retailCategory: '/Hortifruti/Legumes/',
+        packQuantity: 1,
+        packUnit: 'kg',
+        priceCents: 699,
+      }),
+    ];
+
+    const res = computePriceComparison({ stores, items, candidates, nowMs: NOW });
+    expect(res.rankedStores).toHaveLength(1);
+    expect(res.rankedStores[0].matchedItems[0].candidate.productKey).toBe('cebola-nacional');
+    expect(res.rankedStores[0].matchedItems[0].alternatives.map((a) => a.productKey)).not.toContain(
+      'torcida-cebola'
+    );
+  });
+
+  it('deixa o item sem preço quando só existem falsos positivos (ex.: salgadinho de cebola)', () => {
+    const stores = [makeStore({ id: 's1', name: 'Mambo', chainSlug: 'mambo' })];
+    const items = [
+      makeItem({
+        id: 'i1',
+        name: 'Cebola',
+        normalizedName: 'cebola',
+        quantity: 1,
+        unit: 'kg',
+        categoryId: 'hortifruti',
+      }),
+    ];
+    const candidates = [
+      makeCandidate({
+        chainSlug: 'mambo',
+        normalizedTerm: 'cebola',
+        productKey: 'cebolitos',
+        productTitle: 'Salgadinho Cebolitos 55g',
+        retailCategory: '/Mercearia/Salgadinhos/',
+        packQuantity: 55,
+        packUnit: 'g',
+        priceCents: 399,
+      }),
+    ];
+
+    const res = computePriceComparison({ stores, items, candidates, nowMs: NOW });
+    expect(res.rankedStores).toHaveLength(0);
+    expect(res.emptyStores).toHaveLength(1);
+  });
+
+  it('não penaliza embalagem pequena quando o usuário pediu explicitamente quantidade pequena em gramas', () => {
+    const stores = [makeStore({ id: 's1', name: 'Mambo', chainSlug: 'mambo' })];
+    const items = [
+      makeItem({
+        id: 'i1',
+        name: 'Alho',
+        normalizedName: 'alho',
+        quantity: 100,
+        unit: 'g',
+        categoryId: 'hortifruti',
+      }),
+    ];
+    const candidates = [
+      makeCandidate({
+        chainSlug: 'mambo',
+        normalizedTerm: 'alho',
+        productKey: 'alho-100g',
+        productTitle: 'Alho Roxo 100g',
+        retailCategory: '/Hortifruti/Legumes/',
+        packQuantity: 100,
+        packUnit: 'g',
+        priceCents: 399,
+      }),
+      makeCandidate({
+        chainSlug: 'mambo',
+        normalizedTerm: 'alho',
+        productKey: 'alho-500g',
+        productTitle: 'Alho Roxo 500g',
+        retailCategory: '/Hortifruti/Legumes/',
+        packQuantity: 500,
+        packUnit: 'g',
+        priceCents: 1690,
+      }),
+    ];
+
+    const res = computePriceComparison({ stores, items, candidates, nowMs: NOW });
+    expect(res.rankedStores[0].matchedItems[0].candidate.productKey).toBe('alho-100g');
   });
 });

@@ -37,6 +37,7 @@ export interface PriceQuoteCandidate {
   productTitle: string;
   brand?: string | null;
   ean?: string | null;
+  retailCategory?: string | null;
   packQuantity: number;
   packUnit: string;
   priceCents: number;

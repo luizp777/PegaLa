@@ -56,13 +56,18 @@ export function parseJauServeHtml(
   const blocks = html.split(/data-pid="/i).slice(1);
 
   for (const block of blocks) {
-    if (results.length >= 8) break;
+    if (results.length >= 20) break;
     const pidMatch = block.match(/^([^"]+)"/);
     const pid = pidMatch?.[1]?.trim();
     const segment = block.slice(0, 4000);
     const titleMatch = segment.match(/(?:data-product-name="([^"]+)"|alt="([^"]+)")/i);
     const priceMatch = segment.match(/R\$\s*([\d.]+,\d{2})/);
     if (!titleMatch || !priceMatch) continue;
+
+    const categoryMatch = segment.match(/(?:data-product-category|data-category)="([^"]+)"/i);
+    const retailCategory = categoryMatch?.[1]
+      ? decodeHtmlEntities(categoryMatch[1].trim()).slice(0, 240) || null
+      : null;
 
     const rawTitle = decodeHtmlEntities((titleMatch[1] || titleMatch[2] || '').trim());
     const rawPrice = priceMatch[1].replace(/\./g, '').replace(',', '.');
@@ -85,6 +90,7 @@ export function parseJauServeHtml(
       productTitle: rawTitle.slice(0, 240),
       brand: null,
       ean: null,
+      retailCategory,
       packQuantity: pack.quantity,
       packUnit: pack.unit,
       priceCents,
