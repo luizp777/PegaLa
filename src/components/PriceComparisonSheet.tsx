@@ -119,6 +119,7 @@ export function PriceComparisonSheet({
     storeId: string;
     storeName: string;
     item: ShoppingItem;
+    selectableItems?: ShoppingItem[];
     currentTitle?: string;
     packQuantity: number;
     packUnit: string;
@@ -184,11 +185,11 @@ export function PriceComparisonSheet({
         aria-modal="true"
         aria-labelledby="price-compare-title"
         tabIndex={-1}
-        className="animate-fade-slide-up flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl bg-zinc-50 shadow-2xl outline-none dark:bg-zinc-950 sm:rounded-3xl"
+        className="animate-drawer-up flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl bg-zinc-50 shadow-2xl outline-none dark:bg-zinc-950 sm:rounded-3xl"
       >
         {/* Drag handle mobile */}
         <div className="flex justify-center bg-white pt-2.5 dark:bg-zinc-900 sm:hidden">
-          <div className="h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+          <div className="h-1.5 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700" />
         </div>
 
         {/* Header */}
@@ -211,7 +212,7 @@ export function PriceComparisonSheet({
                     }
                     setEditingLocation((v) => !v);
                   }}
-                  className="inline-flex min-h-[32px] items-center gap-1 font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
+                  className="inline-flex min-h-[38px] items-center gap-1 font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
                 >
                   <MapPin className="h-3.5 w-3.5" />
                   {location.label}
@@ -224,7 +225,7 @@ export function PriceComparisonSheet({
                       hapticLight();
                       void changeRadius(km);
                     }}
-                    className={`min-h-[32px] rounded-lg px-2.5 text-xs font-bold transition active:scale-95 ${
+                    className={`min-h-[38px] rounded-lg px-2.5 text-xs font-bold transition active:scale-95 ${
                       location.radiusKm === km
                         ? 'bg-emerald-600 text-white'
                         : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
@@ -405,6 +406,9 @@ export function PriceComparisonSheet({
                   type="button"
                   onClick={() => {
                     hapticLight();
+                    if (location.cep) {
+                      setCepInput(formatCepMask(location.cep));
+                    }
                     setEditingLocation(true);
                   }}
                   className="h-10 rounded-xl bg-zinc-100 px-3.5 text-xs font-bold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200"
@@ -417,14 +421,16 @@ export function PriceComparisonSheet({
 
           {/* Abas: Por loja vs Dividir em 2 */}
           {result.rankedStores.length > 0 && (
-            <div className="flex gap-1.5 rounded-xl bg-zinc-200/70 p-1 dark:bg-zinc-900">
+            <div role="tablist" aria-label="Modo de comparação" className="flex gap-1.5 rounded-xl bg-zinc-200/70 p-1 dark:bg-zinc-900">
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'single'}
                 onClick={() => {
                   hapticLight();
                   setActiveTab('single');
                 }}
-                className={`min-h-[36px] flex-1 rounded-lg py-2 text-xs font-bold transition ${
+                className={`min-h-[38px] flex-1 rounded-lg py-2 text-xs font-bold transition ${
                   activeTab === 'single'
                     ? 'bg-white text-zinc-900 shadow-2xs dark:bg-zinc-800 dark:text-zinc-100'
                     : 'text-zinc-600 dark:text-zinc-400'
@@ -434,11 +440,13 @@ export function PriceComparisonSheet({
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'split'}
                 onClick={() => {
                   hapticLight();
                   setActiveTab('split');
                 }}
-                className={`inline-flex min-h-[36px] flex-1 items-center justify-center gap-1 rounded-lg py-2 text-xs font-bold transition ${
+                className={`inline-flex min-h-[38px] flex-1 items-center justify-center gap-1 rounded-lg py-2 text-xs font-bold transition ${
                   activeTab === 'split'
                     ? 'bg-white text-zinc-900 shadow-2xs dark:bg-zinc-800 dark:text-zinc-100'
                     : 'text-zinc-600 dark:text-zinc-400'
@@ -471,6 +479,7 @@ export function PriceComparisonSheet({
                     >
                       <button
                         type="button"
+                        aria-expanded={isExpanded}
                         onClick={() => {
                           hapticLight();
                           setExpandedStoreId(isExpanded ? null : entry.store.id);
@@ -544,7 +553,7 @@ export function PriceComparisonSheet({
                                       : `Comprando em ${entry.store.name}: ao marcar um item você poderá informar o preço.`
                                   );
                                 }}
-                                className={`min-h-[32px] shrink-0 rounded-lg px-2.5 text-[11px] font-bold transition active:scale-95 ${
+                                className={`min-h-[38px] shrink-0 rounded-lg px-2.5 text-[11px] font-bold transition active:scale-95 ${
                                   isShoppingHere
                                     ? 'bg-emerald-600 text-white'
                                     : 'bg-zinc-100 text-zinc-700 hover:bg-emerald-50 hover:text-emerald-700 dark:bg-zinc-800 dark:text-zinc-300'
@@ -581,7 +590,7 @@ export function PriceComparisonSheet({
                                         setPriceEditTarget(null);
                                         setSwapTarget(m);
                                       }}
-                                      className="inline-flex min-h-[32px] items-center rounded-lg bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 active:scale-95 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                      className="inline-flex min-h-[38px] items-center rounded-lg bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 active:scale-95 dark:bg-emerald-950/50 dark:text-emerald-300"
                                     >
                                       Trocar marca
                                     </button>
@@ -602,7 +611,7 @@ export function PriceComparisonSheet({
                                         });
                                         setManualPriceInput((m.candidate.priceCents / 100).toFixed(2).replace('.', ','));
                                       }}
-                                      className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-zinc-100 px-2.5 text-[11px] font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-300"
+                                      className="inline-flex min-h-[38px] items-center gap-1 rounded-lg bg-zinc-100 px-2.5 text-[11px] font-semibold text-zinc-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-300"
                                     >
                                       <Edit3 className="h-3 w-3" />
                                       Ajustar
@@ -637,7 +646,7 @@ export function PriceComparisonSheet({
                                     });
                                     setManualPriceInput('');
                                   }}
-                                  className="inline-flex min-h-[32px] shrink-0 items-center rounded-lg bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 active:scale-95 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                  className="inline-flex min-h-[38px] shrink-0 items-center rounded-lg bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 active:scale-95 dark:bg-emerald-950/50 dark:text-emerald-300"
                                 >
                                   + Preço
                                 </button>
@@ -656,11 +665,12 @@ export function PriceComparisonSheet({
                 <div className="rounded-2xl border border-dashed border-zinc-300 bg-white/70 p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
                   <button
                     type="button"
+                    aria-expanded={showEmptyStores}
                     onClick={() => {
                       hapticLight();
                       setShowEmptyStores((v) => !v);
                     }}
-                    className="flex min-h-[32px] w-full items-center justify-between text-xs font-semibold text-zinc-600 dark:text-zinc-300"
+                    className="flex min-h-[38px] w-full items-center justify-between text-xs font-semibold text-zinc-600 dark:text-zinc-300"
                   >
                     <span className="inline-flex items-center gap-1.5">
                       <Store className="h-3.5 w-3.5" />
@@ -670,33 +680,37 @@ export function PriceComparisonSheet({
                   </button>
                   {showEmptyStores && (
                     <ul className="mt-2 space-y-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-                      {result.emptyStores.map((st) => (
-                        <li key={st.id} className="flex items-center justify-between gap-2">
-                          <span className="truncate">
-                            {st.name} ({st.distanceKm} km)
-                          </span>
-                          {pendingItems[0] && isPersistedStoreId(st.id) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                hapticLight();
-                                setSwapTarget(null);
-                                setPriceEditTarget({
-                                  storeId: st.id,
-                                  storeName: st.name,
-                                  item: pendingItems[0],
-                                  packQuantity: 1,
-                                  packUnit: pendingItems[0].unit || 'un',
-                                });
-                                setManualPriceInput('');
-                              }}
-                              className="inline-flex min-h-[32px] shrink-0 items-center rounded-lg bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-                            >
-                              + Informar preço
-                            </button>
-                          )}
-                        </li>
-                      ))}
+                      {result.emptyStores.map((st) => {
+                        const availableItems = pendingItems.length > 0 ? pendingItems : checkedItems;
+                        return (
+                          <li key={st.id} className="flex items-center justify-between gap-2">
+                            <span className="truncate">
+                              {st.name} ({st.distanceKm} km)
+                            </span>
+                            {availableItems[0] && isPersistedStoreId(st.id) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  hapticLight();
+                                  setSwapTarget(null);
+                                  setPriceEditTarget({
+                                    storeId: st.id,
+                                    storeName: st.name,
+                                    item: availableItems[0],
+                                    selectableItems: availableItems.length > 1 ? availableItems : undefined,
+                                    packQuantity: 1,
+                                    packUnit: availableItems[0].unit || 'un',
+                                  });
+                                  setManualPriceInput('');
+                                }}
+                                className="inline-flex min-h-[38px] shrink-0 items-center rounded-lg bg-emerald-50 px-2.5 text-[11px] font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                              >
+                                + Informar preço
+                              </button>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
@@ -768,7 +782,7 @@ export function PriceComparisonSheet({
               <button
                 type="button"
                 onClick={() => setSwapTarget(null)}
-                className="min-h-[32px] rounded-lg px-2.5 text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                className="min-h-[38px] rounded-lg px-2.5 text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
                 Fechar
               </button>
@@ -812,15 +826,42 @@ export function PriceComparisonSheet({
               <button
                 type="button"
                 onClick={() => setPriceEditTarget(null)}
-                className="min-h-[32px] rounded-lg px-2.5 text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                className="min-h-[38px] rounded-lg px-2.5 text-xs font-bold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
                 Cancelar
               </button>
             </div>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              Preço da embalagem ({priceEditTarget.packQuantity} {priceEditTarget.packUnit}) —{' '}
-              {priceEditTarget.item.name}
-            </p>
+            {priceEditTarget.selectableItems && priceEditTarget.selectableItems.length > 1 ? (
+              <div className="mt-1.5">
+                <select
+                  aria-label="Selecionar item da lista"
+                  value={priceEditTarget.item.id}
+                  onChange={(e) => {
+                    const chosen = priceEditTarget.selectableItems?.find((i) => i.id === e.target.value);
+                    if (chosen) {
+                      setPriceEditTarget({
+                        ...priceEditTarget,
+                        item: chosen,
+                        packQuantity: 1,
+                        packUnit: chosen.unit || 'un',
+                      });
+                    }
+                  }}
+                  className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-2.5 text-sm font-medium text-zinc-900 focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                >
+                  {priceEditTarget.selectableItems.map((it) => (
+                    <option key={it.id} value={it.id}>
+                      {it.name} ({it.quantity} {it.unit})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                Preço da embalagem ({priceEditTarget.packQuantity} {priceEditTarget.packUnit}) —{' '}
+                {priceEditTarget.item.name}
+              </p>
+            )}
             <div className="mt-2 flex gap-2">
               <input
                 type="text"
@@ -844,7 +885,7 @@ export function PriceComparisonSheet({
         )}
 
         {/* Footer legal disclaimer com safe-area iOS */}
-        <div className="border-t border-zinc-200/80 bg-white px-4 pt-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] text-center text-[11px] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+        <div className="border-t border-zinc-200/80 bg-white px-4 pt-2.5 pb-safe text-center text-[11px] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
           Preços estimados. Valores do site podem diferir da loja física.
         </div>
       </div>

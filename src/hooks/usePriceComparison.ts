@@ -136,6 +136,12 @@ export function usePriceComparison(params: {
         setFailedChains(cached.failedChains);
         setCachedAt(cached.computedAt);
         setIsOfflineCache(!navigator.onLine);
+      } else {
+        setStores([]);
+        setCandidates([]);
+        setFailedChains([]);
+        setCachedAt(null);
+        setIsOfflineCache(false);
       }
     })();
     return () => {

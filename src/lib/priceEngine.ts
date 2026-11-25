@@ -199,10 +199,32 @@ export function computePacksNeeded(
     };
   }
 
+  // Quando o item da lista está em "un" mas a oferta da loja é em peso/volume relevante (>= 500g/500ml),
+  // assume 1 embalagem/kg como estimativa conservadora em vez de multiplicar pelo número de unidades.
+  if (
+    listBase.family === 'unit' &&
+    itemUnit.trim().toLowerCase() === 'un' &&
+    packBase.value >= 500
+  ) {
+    return {
+      packsNeeded: 1,
+      isApproximateUnit: true,
+    };
+  }
+
   return {
     packsNeeded: Math.max(1, Math.ceil(safeItemQty)),
     isApproximateUnit: true,
   };
+}
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function containsForbiddenTerm(normalizedText: string, term: string): boolean {
+  const escaped = escapeRegExp(term).replace(/\s+/g, '\\s+');
+  return new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`).test(normalizedText);
 }
 
 function tokenize(text: string): string[] {
@@ -232,7 +254,7 @@ export function scoreCandidateMatch(
     const catForbidden = CATEGORY_FORBIDDEN_TOKENS[categoryId];
     if (catForbidden) {
       for (const bad of catForbidden) {
-        if (!normTerm.includes(bad) && normTitle.includes(bad)) {
+        if (!containsForbiddenTerm(normTerm, bad) && containsForbiddenTerm(normTitle, bad)) {
           return 0;
         }
       }
@@ -240,9 +262,9 @@ export function scoreCandidateMatch(
   }
 
   for (const rule of NEGATIVE_GUARD_RULES) {
-    if (normTerm.includes(rule.trigger)) {
+    if (containsForbiddenTerm(normTerm, rule.trigger)) {
       for (const bad of rule.forbidden) {
-        if (!normTerm.includes(bad) && normTitle.includes(bad)) {
+        if (!containsForbiddenTerm(normTerm, bad) && containsForbiddenTerm(normTitle, bad)) {
           return 0;
         }
       }

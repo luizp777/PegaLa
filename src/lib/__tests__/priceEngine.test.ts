@@ -73,7 +73,11 @@ describe('parsePackFromTitle & computePacksNeeded', () => {
       packsNeeded: 3,
       isApproximateUnit: false,
     });
-    expect(computePacksNeeded(2, 'un', 1, 'kg')).toEqual({
+    expect(computePacksNeeded(6, 'un', 1, 'kg')).toEqual({
+      packsNeeded: 1,
+      isApproximateUnit: true,
+    });
+    expect(computePacksNeeded(2, 'un', 200, 'g')).toEqual({
       packsNeeded: 2,
       isApproximateUnit: true,
     });
@@ -84,9 +88,11 @@ describe('scoreCandidateMatch', () => {
   it('rejeita falsos positivos por termos negativos e categoria (ex.: refresco/suco para fruta)', () => {
     expect(scoreCandidateMatch('leite integral', 'Leite Condensado Moça 395g')).toBe(0);
     expect(scoreCandidateMatch('leite', 'Sabonete Nivea Leite 85g')).toBe(0);
+    expect(scoreCandidateMatch('leite integral', 'Leite Integral Embalagem 1L')).toBeGreaterThan(0.7);
     expect(scoreCandidateMatch('laranja', 'Refresco em Pó Frisco Sabor Laranja com Acerola 18g', 'hortifruti')).toBe(0);
     expect(scoreCandidateMatch('laranja', 'Suco de Laranja Integral 1L', 'hortifruti')).toBe(0);
     expect(scoreCandidateMatch('laranja', 'Laranja Pera 1kg', 'hortifruti')).toBeGreaterThan(0.7);
+    expect(scoreCandidateMatch('laranja', 'Laranja Pera Embalada 1kg', 'hortifruti')).toBeGreaterThan(0.7);
     expect(scoreCandidateMatch('leite integral', 'Leite Longa Vida Integral Jussara 1L')).toBeGreaterThan(0.7);
   });
 });

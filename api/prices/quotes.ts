@@ -198,6 +198,7 @@ export default {
           );
 
           const failedChainsSet = new Set<string>();
+          const upsertBuffer = new Map<string, Record<string, unknown>>();
           const tasks: Array<() => Promise<void>> = [];
 
           for (const adapter of adapters) {
@@ -218,37 +219,24 @@ export default {
                     candidates,
                   });
 
-                  if (candidates.length > 0) {
-                    const dedupedRows = Array.from(
-                      new Map(
-                        candidates.map((c) => [
-                          c.productKey,
-                          {
-                            store_id: null,
-                            chain_slug: c.chainSlug,
-                            cep_prefix: cepPrefix,
-                            normalized_term: c.normalizedTerm,
-                            product_key: c.productKey,
-                            product_title: c.productTitle,
-                            brand: c.brand ?? null,
-                            ean: c.ean ?? null,
-                            pack_quantity: c.packQuantity,
-                            pack_unit: c.packUnit,
-                            price_cents: c.priceCents,
-                            source: 'online',
-                            observed_at: c.observedAt,
-                            expires_at: c.expiresAt,
-                          },
-                        ])
-                      ).values()
-                    );
-
-                    const { error: upsertErr } = await admin.rpc('upsert_online_prices', {
-                      p_rows: dedupedRows,
+                  for (const c of candidates) {
+                    const dedupeKey = `${c.chainSlug ?? ''}:${cepPrefix}:${c.normalizedTerm}:${c.productKey}`;
+                    upsertBuffer.set(dedupeKey, {
+                      store_id: null,
+                      chain_slug: c.chainSlug,
+                      cep_prefix: cepPrefix,
+                      normalized_term: c.normalizedTerm,
+                      product_key: c.productKey,
+                      product_title: c.productTitle,
+                      brand: c.brand ?? null,
+                      ean: c.ean ?? null,
+                      pack_quantity: c.packQuantity,
+                      pack_unit: c.packUnit,
+                      price_cents: c.priceCents,
+                      source: 'online',
+                      observed_at: c.observedAt,
+                      expires_at: c.expiresAt,
                     });
-                    if (upsertErr) {
-                      console.warn('[PegaLa:Quotes] Falha ao gravar cache online', upsertErr.message);
-                    }
                   }
                 } catch {
                   failedChainsSet.add(adapter.slug);
@@ -258,6 +246,20 @@ export default {
           }
 
           await runWithConcurrency(tasks, 6);
+
+          if (upsertBuffer.size > 0) {
+            const allRows = Array.from(upsertBuffer.values());
+            for (let i = 0; i < allRows.length; i += 80) {
+              const chunk = allRows.slice(i, i + 80);
+              const { error: upsertErr } = await admin.rpc('upsert_online_prices', {
+                p_rows: chunk,
+              });
+              if (upsertErr) {
+                console.warn('[PegaLa:Quotes] Falha ao gravar cache online em lote', upsertErr.message);
+              }
+            }
+          }
+
           emit({ type: 'done', failedChains: Array.from(failedChainsSet) });
         } catch {
           emit({ type: 'done', failedChains: adapters.map((a) => a.slug) });

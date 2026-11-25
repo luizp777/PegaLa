@@ -16,7 +16,22 @@ interface VtexProductResponse {
   }>;
 }
 
+const MAX_REGION_CACHE_ENTRIES = 200;
 const regionCache = new Map<string, { regionId: string | null; expiresAt: number }>();
+
+function setRegionCache(key: string, regionId: string | null): void {
+  const now = Date.now();
+  if (regionCache.size >= MAX_REGION_CACHE_ENTRIES) {
+    for (const [k, v] of regionCache.entries()) {
+      if (v.expiresAt <= now) regionCache.delete(k);
+    }
+    if (regionCache.size >= MAX_REGION_CACHE_ENTRIES) {
+      const oldestKey = regionCache.keys().next().value;
+      if (oldestKey) regionCache.delete(oldestKey);
+    }
+  }
+  regionCache.set(key, { regionId, expiresAt: now + 6 * 3600_000 });
+}
 
 async function resolveVtexRegion(host: string, cep: string): Promise<string | null> {
   const cleanCep = cep.replace(/\D/g, '');
@@ -39,7 +54,7 @@ async function resolveVtexRegion(host: string, cep: string): Promise<string | nu
     if (!res.ok) return null;
     const data = (await res.json()) as Array<{ id?: string }>;
     const regionId = Array.isArray(data) && data[0]?.id ? data[0].id : null;
-    regionCache.set(key, { regionId, expiresAt: Date.now() + 6 * 3600_000 });
+    setRegionCache(key, regionId);
     return regionId;
   } catch {
     return null;

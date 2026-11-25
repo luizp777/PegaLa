@@ -1,18 +1,36 @@
 import type { PriceQuoteCandidate } from '../../../shared/priceTypes.js';
 import { buildProductKey, parsePackServer, type AdapterSearchContext, type RetailAdapter } from './types.js';
 
+const NAMED_ENTITIES: Record<string, string> = {
+  aacute: 'á',
+  agrave: 'à',
+  acirc: 'â',
+  atilde: 'ã',
+  eacute: 'é',
+  ecirc: 'ê',
+  iacute: 'í',
+  oacute: 'ó',
+  ocirc: 'ô',
+  otilde: 'õ',
+  uacute: 'ú',
+  uuml: 'ü',
+  ccedil: 'ç',
+  amp: '&',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+};
+
 function decodeHtmlEntities(input: string): string {
   return input
-    .replace(/&aacute;/gi, 'á')
-    .replace(/&eacute;/gi, 'é')
-    .replace(/&iacute;/gi, 'í')
-    .replace(/&oacute;/gi, 'ó')
-    .replace(/&uacute;/gi, 'ú')
-    .replace(/&atilde;/gi, 'ã')
-    .replace(/&otilde;/gi, 'õ')
-    .replace(/&ccedil;/gi, 'ç')
-    .replace(/&amp;/gi, '&')
-    .replace(/&quot;/gi, '"');
+    .replace(/&([a-z]+);/gi, (match, name: string) => {
+      const lower = name.toLowerCase();
+      const decoded = NAMED_ENTITIES[lower];
+      if (!decoded) return match;
+      return name[0] === name[0].toUpperCase() ? decoded.toUpperCase() : decoded;
+    })
+    .replace(/&#(\d+);/g, (_m, dec: string) => String.fromCodePoint(Number(dec)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, hex: string) => String.fromCodePoint(parseInt(hex, 16)));
 }
 
 export function parseJauServeHtml(

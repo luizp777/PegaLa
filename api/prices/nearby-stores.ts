@@ -436,7 +436,18 @@ export default {
       storeRows = cachedStores as StoreRow[];
     }
 
-    const missingTypes = types.filter((t) => !storeRows.some((s) => s.store_type === t));
+    const oneDayAgoMs = Date.now() - 24 * 3600_000;
+    const missingTypes = types.filter((t) => {
+      const ofTypeInRadius = storeRows.filter(
+        (s) => s.store_type === t && haversineKm(lat, lng, s.lat, s.lng) <= radiusKm + 1
+      );
+      if (ofTypeInRadius.length === 0) return true;
+      if (ofTypeInRadius.length < 3) {
+        const hasFreshFetch = ofTypeInRadius.some((s) => Date.parse(s.fetched_at) >= oneDayAgoMs);
+        return !hasFreshFetch;
+      }
+      return false;
+    });
     if (missingTypes.length > 0) {
       // Popula sempre com raio de 10km para não prender a região em cache de raio menor
       const rawOsmStores = await fetchOverpassStores(lat, lng, 10, missingTypes);

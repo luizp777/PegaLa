@@ -121,7 +121,7 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label={`Compartilhar ${list.name}`}
+        aria-labelledby="share-modal-title"
         className="animate-drawer-up max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 pb-safe shadow-2xl focus:outline-none dark:bg-zinc-900 sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -129,7 +129,7 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
         <div className="mb-4 flex items-center justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
+              <h2 id="share-modal-title" className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
                 Compartilhar "{list.name}"
               </h2>
               {list.isShared ? (
@@ -151,7 +151,7 @@ export function ShareModal({ open, list, onClose, onJoinedList }: ShareModalProp
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
             aria-label="Fechar"
           >
             <X className="h-5 w-5" />

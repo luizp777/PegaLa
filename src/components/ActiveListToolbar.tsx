@@ -55,15 +55,15 @@ export function ActiveListToolbar({
 
   return (
     <div className="mb-3 space-y-2">
-      {canComparePrices && onOpenPriceComparison && (
+      {canComparePrices && onOpenPriceComparison && !showSearch && (
         <div
           className={
-            !showSearch && !showCategoryPills
+            !showCategoryPills
               ? 'flex items-center justify-between gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-50/60 px-3 py-2 dark:bg-emerald-950/30'
               : 'flex justify-end'
           }
         >
-          {!showSearch && !showCategoryPills && (
+          {!showCategoryPills && (
             <span className="text-xs font-medium text-emerald-900 dark:text-emerald-200">
               Onde essa lista fica mais barata?
             </span>
@@ -79,24 +79,36 @@ export function ActiveListToolbar({
         </div>
       )}
       {showSearch && (
-        <div className="relative flex items-center">
-          <Search className="pointer-events-none absolute left-3 h-3.5 w-3.5 text-zinc-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Filtrar itens da lista..."
-            aria-label="Filtrar itens da lista"
-            className="h-9 w-full rounded-xl border border-zinc-200/90 bg-white pl-8.5 pr-9 text-base text-zinc-800 placeholder:text-zinc-400 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 sm:text-xs"
-          />
-          {searchQuery && (
+        <div className="flex items-center gap-2">
+          <div className="relative flex min-w-0 flex-1 items-center">
+            <Search className="pointer-events-none absolute left-3 h-3.5 w-3.5 text-zinc-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Filtrar itens da lista..."
+              aria-label="Filtrar itens da lista"
+              className="h-9 w-full rounded-xl border border-zinc-200/90 bg-white pl-8.5 pr-9 text-base text-zinc-800 placeholder:text-zinc-400 focus:border-emerald-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 sm:text-xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => onSearchChange('')}
+                className="absolute right-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                aria-label="Limpar filtro da lista"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          {canComparePrices && onOpenPriceComparison && (
             <button
               type="button"
-              onClick={() => onSearchChange('')}
-              className="absolute right-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-              aria-label="Limpar filtro da lista"
+              onClick={onOpenPriceComparison}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white shadow-2xs transition hover:bg-emerald-700 active:scale-95"
             >
-              <X className="h-3.5 w-3.5" />
+              <Scale className="h-3.5 w-3.5" />
+              <span>Comparar</span>
             </button>
           )}
         </div>
