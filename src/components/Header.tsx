@@ -127,7 +127,7 @@ export function Header({
   const progressPercent = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0;
 
   return (
-    <header className="border-b border-zinc-200/80 bg-white/90 pt-safe backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-950/90">
+    <header className="relative z-20 border-b border-zinc-200/80 bg-white/90 pt-safe backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-950/90">
       <div className="mx-auto flex max-w-2xl items-center justify-between gap-2 px-3 py-2 sm:px-4">
         {/* Left: List Switcher */}
         <div className="relative min-w-0 flex-1" ref={menuRef}>

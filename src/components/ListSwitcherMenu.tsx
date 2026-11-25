@@ -42,7 +42,7 @@ export function ListSwitcherMenu({
     <div
       role="menu"
       aria-label="Suas Listas"
-      className="animate-fade-slide-up absolute left-0 top-full mt-1.5 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+      className="animate-fade-slide-up absolute left-0 top-full z-30 mt-1.5 w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
     >
       <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
         Suas Listas

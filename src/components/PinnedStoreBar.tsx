@@ -39,7 +39,7 @@ export function PinnedStoreBar({
     <div
       role="region"
       aria-label="Estabelecimento selecionado"
-      className="border-t border-b border-emerald-500/20 bg-emerald-50/95 px-3 py-2 shadow-2xs backdrop-blur-md dark:border-emerald-500/20 dark:bg-emerald-950/90 sm:px-4"
+      className="relative z-10 border-t border-b border-emerald-500/20 bg-emerald-50/95 px-3 py-2 shadow-2xs backdrop-blur-md dark:border-emerald-500/20 dark:bg-emerald-950/90 sm:px-4"
     >
       <div className="mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
         <div className="min-w-0 flex-1">
